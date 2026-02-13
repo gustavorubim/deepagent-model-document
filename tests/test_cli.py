@@ -37,6 +37,17 @@ def test_validate_template_success(template_path: Path) -> None:
     result = runner.invoke(app, ["validate-template", "--template", str(template_path)])
     assert result.exit_code == 0
     assert "Template valid" in result.stdout
+    assert "verbose:" in result.stdout
+
+
+def test_validate_template_no_verbose_suppresses_progress(template_path: Path) -> None:
+    result = runner.invoke(
+        app,
+        ["validate-template", "--template", str(template_path), "--no-verbose"],
+    )
+    assert result.exit_code == 0
+    assert "Template valid" in result.stdout
+    assert "verbose:" not in result.stdout
 
 
 def test_validate_template_fails_with_duplicate_id(duplicate_template_path: Path) -> None:
@@ -79,6 +90,7 @@ def test_draft_command_creates_outputs(
     assert run_dirs
     assert (run_dirs[0] / "draft.md").exists()
     assert context_file.exists()
+    assert "verbose:" in result.stdout
 
 
 def test_draft_command_requires_api_key(

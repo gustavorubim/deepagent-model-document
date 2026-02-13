@@ -33,12 +33,24 @@ app = typer.Typer(help="Deep agent for model risk document drafting and applicat
 console = Console()
 
 
+def _vprint(enabled: bool, message: str) -> None:
+    """Print verbose progress messages."""
+    if enabled:
+        console.print(f"[cyan]verbose:[/cyan] {message}")
+
+
 @app.command("validate-template")
 def validate_template_cmd(
     template: Annotated[Path, typer.Option(help="Path to DOCX template.")],
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose/--no-verbose", help="Enable detailed logs. Enabled by default."),
+    ] = True,
 ) -> None:
     """Validate template marker correctness."""
+    _vprint(verbose, f"Loading template: {template}")
     parsed = parse_template(template)
+    _vprint(verbose, f"Parsed {len(parsed.sections)} sections. Running validation checks.")
     errors = validate_template(parsed)
     if errors:
         console.print("[red]Template validation failed:[/red]")
@@ -60,9 +72,14 @@ def draft_cmd(
         "gemini-3-flash-preview"
     ),
     config: Annotated[Path | None, typer.Option(help="Optional YAML config path.")] = None,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose/--no-verbose", help="Enable detailed logs. Enabled by default."),
+    ] = True,
 ) -> None:
     """Generate draft markdown from codebase and template."""
     try:
+        _vprint(verbose, "Loading runtime configuration (.env + YAML + CLI overrides).")
         runtime_config = load_config(
             config_path=config,
             overrides={"model": model, "output_root": output_root, "context_file": context_file},
@@ -73,27 +90,39 @@ def draft_cmd(
         raise typer.Exit(code=3) from exc
 
     parsed_template = parse_template(template)
+    _vprint(verbose, f"Template parsed with {len(parsed_template.sections)} sections.")
     errors = validate_template(parsed_template)
     if errors:
         for error in errors:
             console.print(f"[red]{error}[/red]")
         raise typer.Exit(code=2)
 
+    _vprint(verbose, f"Indexing codebase files from: {codebase}")
     repo_index = index_repo(
         codebase_path=codebase,
         allowlist=runtime_config.repo_allowlist,
         denylist=runtime_config.repo_denylist,
     )
+    _vprint(verbose, f"Indexed {len(repo_index.files)} text files.")
     existing_context = load_context(Path(runtime_config.context_file))
+    _vprint(
+        verbose,
+        f"Loaded {len(existing_context)} context entries from {runtime_config.context_file}.",
+    )
     tools = build_tools(repo_index, existing_context)
+    _vprint(verbose, f"Built {len(tools)} agent tools.")
     runtime = build_agent(runtime_config, tools)
+    _vprint(verbose, "Generating draft section-by-section with deep agent.")
     draft = generate_draft(parsed_template, repo_index, existing_context, runtime)
+    _vprint(verbose, f"Draft contains {len(draft.sections)} fillable sections.")
 
     run_dir = _make_run_dir(ensure_output_root(runtime_config.output_root))
+    _vprint(verbose, f"Writing run artifacts into: {run_dir}")
     write_run_artifacts(run_dir, draft)
 
     merged_context = merge_missing_items(existing_context, collect_missing_items(draft))
     write_context(merged_context, Path(runtime_config.context_file))
+    _vprint(verbose, f"Context file updated with {len(merged_context)} total items.")
 
     console.print(f"[green]Draft generated.[/green] {run_dir / 'draft.md'}")
     console.print(f"[green]Context updated.[/green] {Path(runtime_config.context_file)}")
@@ -106,21 +135,29 @@ def apply_cmd(
     output_root: Annotated[str, typer.Option(help="Root output directory.")] = "outputs",
     force: Annotated[bool, typer.Option(help="Allow apply to already-applied documents.")] = False,
     config: Annotated[Path | None, typer.Option(help="Optional YAML config path.")] = None,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose/--no-verbose", help="Enable detailed logs. Enabled by default."),
+    ] = True,
 ) -> None:
     """Apply reviewed draft markdown content into copied DOCX template."""
+    _vprint(verbose, "Loading runtime configuration.")
     runtime_config = load_config(
         config_path=config,
         overrides={"output_root": output_root},
         require_api_key=False,
     )
     try:
+        _vprint(verbose, f"Parsing draft markdown: {draft}")
         parsed_draft = parse_draft_markdown(draft)
+        _vprint(verbose, f"Parsed {len(parsed_draft.sections)} draft sections.")
     except DraftParseError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=4) from exc
 
     run_dir = _make_run_dir(ensure_output_root(runtime_config.output_root))
     out_doc = run_dir / "applied-document.docx"
+    _vprint(verbose, f"Applying draft to template copy: {out_doc}")
 
     try:
         report = apply_draft_to_template(template, parsed_draft, out_doc, force=force)
@@ -129,6 +166,7 @@ def apply_cmd(
         raise typer.Exit(code=5) from exc
 
     unresolved_count = len(report.unresolved_section_ids)
+    _vprint(verbose, f"Apply completed with {unresolved_count} unresolved sections.")
     console.print(f"[green]Applied document created.[/green] {report.output_path}")
     console.print(f"Unresolved sections: {unresolved_count}")
 

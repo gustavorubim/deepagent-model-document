@@ -177,6 +177,12 @@ Checks whether the template can be parsed into sections.
 uv run mrm-agent validate-template --template <path.docx>
 ```
 
+Verbosity control:
+
+```bash
+uv run mrm-agent validate-template --template <path.docx> --no-verbose
+```
+
 What it does:
 
 - parses heading structure
@@ -194,6 +200,12 @@ uv run mrm-agent draft \
   --output-root outputs \
   --context-file additinal-context.md \
   --model gemini-3-flash-preview
+```
+
+Verbosity control (verbose is on by default):
+
+```bash
+uv run mrm-agent draft ... --no-verbose
 ```
 
 What it writes inside `outputs/<timestamp>/`:
@@ -216,6 +228,12 @@ uv run mrm-agent apply \
   --draft <path/to/draft.md> \
   --template <path.docx> \
   --output-root outputs
+```
+
+Verbosity control:
+
+```bash
+uv run mrm-agent apply ... --no-verbose
 ```
 
 Optional:
@@ -276,6 +294,13 @@ uv run python examples/build_fictitious_mrm_template.py
 - `3` missing required runtime config (for example `GOOGLE_API_KEY`)
 - `4` invalid/unparseable draft markdown
 - `5` unsupported/unsafe apply operation
+
+## Verbose logging
+
+All commands default to verbose logging (`--verbose`).
+
+- Use `--no-verbose` to reduce output to essential success/error lines.
+- Verbose lines are prefixed with `verbose:`.
 
 ## Developer checks
 
