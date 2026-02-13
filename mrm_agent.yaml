@@ -1,10 +1,26 @@
 model: gemini-3-flash-preview
 provider: google_ai_studio
+auth_mode: api
+vertexai: false
+google_project:
+google_location: us-central1
+https_proxy:
+ssl_cert_file:
 temperature: 0.1
 max_section_tokens: 4000
 context_file: additinal-context.md
 output_root: outputs
 fallback_model: gemini-2.5-flash
+m2m_token_url:
+m2m_client_id:
+m2m_client_secret:
+m2m_scope:
+m2m_audience:
+m2m_grant_type: client_credentials
+m2m_token_field: access_token
+m2m_expires_in_field: expires_in
+m2m_auth_style: body
+m2m_token_timeout: 30
 repo_allowlist:
   - "*.py"
   - "*.md"

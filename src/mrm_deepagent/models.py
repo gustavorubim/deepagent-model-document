@@ -22,6 +22,13 @@ class DraftStatus(StrEnum):
     PARTIAL = "partial"
 
 
+class AuthMode(StrEnum):
+    """Authentication mode for Gemini access."""
+
+    API = "api"
+    M2M = "m2m"
+
+
 class CheckboxToken(BaseModel):
     """Checkbox declaration in template/draft."""
 
@@ -98,6 +105,12 @@ class AppConfig(BaseModel):
 
     model: str = "gemini-3-flash-preview"
     provider: str = "google_ai_studio"
+    auth_mode: AuthMode = AuthMode.API
+    vertexai: bool = False
+    google_project: str | None = None
+    google_location: str = "us-central1"
+    https_proxy: str | None = None
+    ssl_cert_file: str | None = None
     temperature: float = 0.1
     max_section_tokens: int = 4000
     context_file: str = "additinal-context.md"
@@ -128,3 +141,13 @@ class AppConfig(BaseModel):
         ]
     )
     google_api_key: str | None = None
+    m2m_token_url: str | None = None
+    m2m_client_id: str | None = None
+    m2m_client_secret: str | None = None
+    m2m_scope: str | None = None
+    m2m_audience: str | None = None
+    m2m_grant_type: str = "client_credentials"
+    m2m_token_field: str = "access_token"
+    m2m_expires_in_field: str = "expires_in"
+    m2m_auth_style: str = "body"
+    m2m_token_timeout: int = 30

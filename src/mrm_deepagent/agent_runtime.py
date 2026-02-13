@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Any
 
+from mrm_deepagent.auth import apply_network_settings, build_m2m_credentials
 from mrm_deepagent.models import AppConfig
 from mrm_deepagent.prompts import SYSTEM_PROMPT
 
@@ -74,18 +75,34 @@ def build_agent(config: AppConfig, tools: list[Any]) -> AgentRuntime:
 def _build_chat_model(model_name: str, config: AppConfig) -> Any:
     from langchain_google_genai import ChatGoogleGenerativeAI
 
+    apply_network_settings(config)
+    common_kwargs = _chat_model_kwargs(config)
+
     try:
-        return ChatGoogleGenerativeAI(
-            model=model_name,
-            google_api_key=config.google_api_key,
-            temperature=config.temperature,
-        )
+        return ChatGoogleGenerativeAI(model=model_name, **common_kwargs)
     except Exception:  # noqa: BLE001
-        return ChatGoogleGenerativeAI(
-            model=config.fallback_model,
-            google_api_key=config.google_api_key,
-            temperature=config.temperature,
-        )
+        return ChatGoogleGenerativeAI(model=config.fallback_model, **common_kwargs)
+
+
+def _chat_model_kwargs(config: AppConfig) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {"temperature": config.temperature}
+
+    if config.auth_mode.value == "m2m":
+        kwargs["credentials"] = build_m2m_credentials(config)
+        kwargs["vertexai"] = True
+        kwargs["project"] = config.google_project
+        kwargs["location"] = config.google_location
+        return kwargs
+
+    if config.google_api_key:
+        kwargs["google_api_key"] = config.google_api_key
+
+    if config.vertexai:
+        kwargs["vertexai"] = True
+        kwargs["project"] = config.google_project
+        kwargs["location"] = config.google_location
+
+    return kwargs
 
 
 def _build_deep_agent(model: Any, tools: list[Any]) -> Any:

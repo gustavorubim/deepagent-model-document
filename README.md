@@ -88,7 +88,9 @@ graph TD
 
 - Python `3.11`
 - `uv` installed
-- Gemini API key (`GOOGLE_API_KEY`) for `draft`
+- Gemini auth configured for `draft`:
+  - API mode (`GOOGLE_API_KEY`) or
+  - M2M mode (`MRM_AUTH_MODE=m2m`) with Vertex AI settings
 
 ## Environment setup
 
@@ -128,35 +130,63 @@ uv run ruff --version
 uv run pytest --version
 ```
 
-## API key setup
+## Authentication setup (`.env`)
 
-`draft` requires `GOOGLE_API_KEY`. The project now loads it from a local `.env` file by default.
-
-### Preferred: `.env` file (repo root)
-
-1. Copy the example:
+`load_config()` reads `.env` automatically. Copy template first:
 
 ```bash
 cp .env.example .env
 ```
 
-PowerShell equivalent:
+PowerShell:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-2. Edit `.env` and set your key:
+### Option A: API key mode
 
 ```env
+MRM_AUTH_MODE=api
 GOOGLE_API_KEY=your_api_key_here
+GOOGLE_VERTEXAI=false
 ```
 
-3. Run CLI commands normally (`uv run ...`). `load_config()` automatically reads `.env`.
+### Option B: M2M mode (enterprise)
 
-### Optional override
+```env
+MRM_AUTH_MODE=m2m
+GOOGLE_VERTEXAI=true
+GOOGLE_PROJECT=your-gcp-project-id
+GOOGLE_LOCATION=us-central1
 
-If `GOOGLE_API_KEY` is also set in your shell, shell environment value takes precedence over `.env`.
+M2M_TOKEN_URL=https://auth.example.corp/oauth2/token
+M2M_CLIENT_ID=your_client_id
+M2M_CLIENT_SECRET=your_client_secret
+M2M_SCOPE=https://www.googleapis.com/auth/cloud-platform
+M2M_AUDIENCE=
+M2M_GRANT_TYPE=client_credentials
+M2M_TOKEN_FIELD=access_token
+M2M_EXPIRES_IN_FIELD=expires_in
+M2M_AUTH_STYLE=body
+M2M_TOKEN_TIMEOUT=30
+```
+
+### Proxy and PEM (optional)
+
+```env
+HTTPS_PROXY=https://proxy.example.corp:8443
+SSL_CERT_FILE=C:/certs/corp-ca-bundle.pem
+```
+
+The runtime applies these for Gemini calls and M2M token refresh.
+
+Precedence order is:
+
+1. CLI arguments
+2. Shell environment variables
+3. `.env` file
+4. `mrm_agent.yaml`
 
 ## Quick run
 
@@ -199,7 +229,14 @@ uv run mrm-agent draft \
   --template <path.docx> \
   --output-root outputs \
   --context-file additinal-context.md \
-  --model gemini-3-flash-preview
+  --model gemini-3-flash-preview \
+  --auth-mode api
+```
+
+M2M example:
+
+```bash
+uv run mrm-agent draft ... --auth-mode m2m --vertexai --google-project your-gcp-project-id
 ```
 
 Verbosity control (verbose is on by default):
@@ -269,6 +306,22 @@ Main fields:
 
 - `model`
 - `fallback_model`
+- `auth_mode` (`api` or `m2m`)
+- `vertexai`
+- `google_project`
+- `google_location`
+- `https_proxy`
+- `ssl_cert_file`
+- `m2m_token_url`
+- `m2m_client_id`
+- `m2m_client_secret`
+- `m2m_scope`
+- `m2m_audience`
+- `m2m_grant_type`
+- `m2m_token_field`
+- `m2m_expires_in_field`
+- `m2m_auth_style`
+- `m2m_token_timeout`
 - `temperature`
 - `max_section_tokens`
 - `context_file`

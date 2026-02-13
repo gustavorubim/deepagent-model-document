@@ -108,16 +108,16 @@ def test_response_to_text_handles_non_json_model_dump() -> None:
 
 
 def test_build_chat_model_uses_fallback_on_exception(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[str] = []
+    calls: list[dict[str, object]] = []
 
     class _FakeChatModel:
-        def __init__(self, model: str, google_api_key: str | None, temperature: float) -> None:
-            calls.append(model)
-            if model == "primary":
+        def __init__(self, **kwargs: object) -> None:
+            calls.append(kwargs)
+            if kwargs.get("model") == "primary":
                 raise ValueError("bad primary")
-            self.model = model
-            self.google_api_key = google_api_key
-            self.temperature = temperature
+            self.model = kwargs["model"]
+            self.google_api_key = kwargs.get("google_api_key")
+            self.temperature = kwargs.get("temperature")
 
     monkeypatch.setitem(
         sys.modules,
@@ -127,7 +127,39 @@ def test_build_chat_model_uses_fallback_on_exception(monkeypatch: pytest.MonkeyP
     config = AppConfig(model="primary", fallback_model="fallback", google_api_key="k")
     model = _build_chat_model("primary", config)
     assert getattr(model, "model") == "fallback"
-    assert calls == ["primary", "fallback"]
+    assert [call["model"] for call in calls] == ["primary", "fallback"]
+    assert calls[1]["google_api_key"] == "k"
+
+
+def test_build_chat_model_m2m_uses_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeChatModel:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "langchain_google_genai",
+        types.SimpleNamespace(ChatGoogleGenerativeAI=_FakeChatModel),
+    )
+    monkeypatch.setattr(
+        "mrm_deepagent.agent_runtime.build_m2m_credentials",
+        lambda _config: "creds",
+    )
+    config = AppConfig(
+        auth_mode="m2m",
+        vertexai=True,
+        google_project="proj",
+        google_location="us-central1",
+        m2m_token_url="https://auth/token",
+        m2m_client_id="cid",
+        m2m_client_secret="secret",
+    )
+    _build_chat_model("gemini-model", config)
+    assert captured["credentials"] == "creds"
+    assert captured["vertexai"] is True
+    assert captured["project"] == "proj"
 
 
 def test_build_deep_agent_prefers_kwargs_signature(monkeypatch: pytest.MonkeyPatch) -> None:

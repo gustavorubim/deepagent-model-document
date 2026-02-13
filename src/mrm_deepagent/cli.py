@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import typer
 from rich.console import Console
@@ -71,6 +71,33 @@ def draft_cmd(
     model: Annotated[str, typer.Option(help="Gemini model name override.")] = (
         "gemini-3-flash-preview"
     ),
+    auth_mode: Annotated[
+        Literal["api", "m2m"],
+        typer.Option(help="Authentication mode: 'api' or 'm2m'."),
+    ] = "api",
+    vertexai: Annotated[
+        bool | None,
+        typer.Option(
+            "--vertexai/--no-vertexai",
+            help="Enable Vertex AI mode. If omitted, uses config/.env value.",
+        ),
+    ] = None,
+    google_project: Annotated[
+        str | None,
+        typer.Option(help="Google Cloud project ID for Vertex AI."),
+    ] = None,
+    google_location: Annotated[
+        str | None,
+        typer.Option(help="Google Cloud location for Vertex AI."),
+    ] = None,
+    https_proxy: Annotated[
+        str | None,
+        typer.Option(help="HTTPS proxy URL (for example https://proxy.corp:8443)."),
+    ] = None,
+    ssl_cert_file: Annotated[
+        str | None,
+        typer.Option(help="Path to PEM certificate bundle for TLS verification."),
+    ] = None,
     config: Annotated[Path | None, typer.Option(help="Optional YAML config path.")] = None,
     verbose: Annotated[
         bool,
@@ -82,7 +109,17 @@ def draft_cmd(
         _vprint(verbose, "Loading runtime configuration (.env + YAML + CLI overrides).")
         runtime_config = load_config(
             config_path=config,
-            overrides={"model": model, "output_root": output_root, "context_file": context_file},
+            overrides={
+                "model": model,
+                "output_root": output_root,
+                "context_file": context_file,
+                "auth_mode": auth_mode,
+                "vertexai": vertexai,
+                "google_project": google_project,
+                "google_location": google_location,
+                "https_proxy": https_proxy,
+                "ssl_cert_file": ssl_cert_file,
+            },
             require_api_key=True,
         )
     except MissingRuntimeConfigError as exc:

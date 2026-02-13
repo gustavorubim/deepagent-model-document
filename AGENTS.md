@@ -17,14 +17,16 @@ Build and maintain a CLI-first deep agent that:
 - Package/env manager: `uv`
 - Linting: `ruff`
 - Testing: `pytest` + `pytest-cov` with `>=90%` line coverage
-- LLM provider: Gemini via `langchain-google-genai` and `GOOGLE_API_KEY` (loaded from `.env`)
+- LLM provider: Gemini via `langchain-google-genai`
+  - API mode: `MRM_AUTH_MODE=api` + `GOOGLE_API_KEY`
+  - M2M mode: `MRM_AUTH_MODE=m2m` + Vertex + M2M OAuth fields
 
 ## Contracts to preserve
 
 ### CLI
 
 - `mrm-agent validate-template --template <path.docx>`
-- `mrm-agent draft --codebase <path> --template <path.docx> --output-root outputs --context-file additinal-context.md --model gemini-3-flash-preview`
+- `mrm-agent draft --codebase <path> --template <path.docx> --output-root outputs --context-file additinal-context.md --model gemini-3-flash-preview --auth-mode api|m2m`
 - `mrm-agent apply --draft <draft.md> --template <path.docx> --output-root outputs`
 
 ### Exit codes

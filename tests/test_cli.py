@@ -67,6 +67,7 @@ def test_draft_command_creates_outputs(
     context_file = tmp_path / "additinal-context.md"
     outputs = tmp_path / "outputs"
 
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
     monkeypatch.setattr("mrm_deepagent.cli.build_agent", lambda *_args, **_kwargs: _FakeRuntime())
 
@@ -112,7 +113,34 @@ def test_draft_command_requires_api_key(
     assert "GOOGLE_API_KEY" in result.stdout
 
 
-def test_apply_command_happy_path(tmp_path: Path, template_path: Path) -> None:
+def test_draft_command_m2m_requires_m2m_settings(
+    tmp_path: Path,
+    template_path: Path,
+    monkeypatch,
+) -> None:
+    codebase = tmp_path / "repo"
+    codebase.mkdir()
+    (codebase / "train.py").write_text("metric = 0.91\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+    result = runner.invoke(
+        app,
+        [
+            "draft",
+            "--codebase",
+            str(codebase),
+            "--template",
+            str(template_path),
+            "--auth-mode",
+            "m2m",
+        ],
+    )
+    assert result.exit_code == 3
+    assert "M2M auth requires" in result.stdout
+
+
+def test_apply_command_happy_path(tmp_path: Path, template_path: Path, monkeypatch) -> None:
     draft = tmp_path / "draft.md"
     draft.write_text(
         """
@@ -143,6 +171,7 @@ Partial section body.
         encoding="utf-8",
     )
     outputs = tmp_path / "outputs"
+    monkeypatch.chdir(tmp_path)
     result = runner.invoke(
         app,
         [
@@ -162,9 +191,12 @@ Partial section body.
     assert (run_dirs[0] / "applied-document.docx").exists()
 
 
-def test_apply_command_invalid_draft_returns_exit_4(tmp_path: Path, template_path: Path) -> None:
+def test_apply_command_invalid_draft_returns_exit_4(
+    tmp_path: Path, template_path: Path, monkeypatch
+) -> None:
     bad_draft = tmp_path / "bad.md"
     bad_draft.write_text("## [ID:x] Bad\nNo yaml", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
     result = runner.invoke(
         app,
         ["apply", "--draft", str(bad_draft), "--template", str(template_path)],
