@@ -1,0 +1,25 @@
+model: gemini-3-flash-preview
+provider: google_ai_studio
+temperature: 0.1
+max_section_tokens: 4000
+context_file: additinal-context.md
+output_root: outputs
+fallback_model: gemini-2.5-flash
+repo_allowlist:
+  - "*.py"
+  - "*.md"
+  - "*.yaml"
+  - "*.yml"
+  - "*.json"
+  - "*.toml"
+  - "*.txt"
+  - "*.ipynb"
+repo_denylist:
+  - ".git/**"
+  - "venv/**"
+  - ".venv/**"
+  - "node_modules/**"
+  - "*.parquet"
+  - "*.bin"
+  - "*.pt"
+  - "*.pkl"

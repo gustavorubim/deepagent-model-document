@@ -1,0 +1,7 @@
+test_size: 0.2
+random_state: 7
+model_type: linear_regression
+target_column: target_loss
+feature_columns:
+  - feature_income
+  - feature_utilization
