@@ -90,6 +90,7 @@ def test_draft_command_requires_api_key(
     codebase.mkdir()
     (codebase / "train.py").write_text("metric = 0.91\n", encoding="utf-8")
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.chdir(tmp_path)
 
     result = runner.invoke(
         app,

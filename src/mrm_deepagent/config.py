@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from dotenv import load_dotenv
 
 from mrm_deepagent.exceptions import MissingRuntimeConfigError
 from mrm_deepagent.models import AppConfig
@@ -16,9 +17,12 @@ def load_config(
     config_path: Path | None = None,
     overrides: dict[str, Any] | None = None,
     require_api_key: bool = True,
+    dotenv_path: Path | None = None,
 ) -> AppConfig:
-    """Load config from defaults, yaml file, env, and explicit overrides."""
+    """Load config from defaults, yaml file, .env, env, and explicit overrides."""
     payload: dict[str, Any] = {}
+    dotenv_to_load = dotenv_path if dotenv_path is not None else Path(".env")
+    load_dotenv(dotenv_path=dotenv_to_load, override=False)
 
     if config_path is not None:
         if not config_path.exists():
@@ -33,7 +37,9 @@ def load_config(
             if value is not None:
                 payload[key] = value
 
-    payload["google_api_key"] = os.getenv("GOOGLE_API_KEY")
+    env_api_key = os.getenv("GOOGLE_API_KEY")
+    if env_api_key:
+        payload["google_api_key"] = env_api_key
 
     config = AppConfig(**payload)
 

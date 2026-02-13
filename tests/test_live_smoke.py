@@ -10,6 +10,8 @@ from mrm_deepagent.models import AppConfig
 
 @pytest.mark.live
 def test_live_gemini_smoke() -> None:
+    if os.getenv("RUN_LIVE_TESTS") != "1":
+        pytest.skip("Set RUN_LIVE_TESTS=1 to enable live Gemini smoke tests.")
     if not os.getenv("GOOGLE_API_KEY"):
         pytest.skip("GOOGLE_API_KEY not set.")
     config = AppConfig(google_api_key=os.getenv("GOOGLE_API_KEY"))

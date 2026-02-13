@@ -34,6 +34,7 @@ def test_load_config_requires_api_key(tmp_path: Path, monkeypatch: pytest.Monkey
     config_path = tmp_path / "config.yaml"
     config_path.write_text("provider: google_ai_studio\n", encoding="utf-8")
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.chdir(tmp_path)
 
     with pytest.raises(MissingRuntimeConfigError):
         load_config(config_path=config_path, require_api_key=True)
@@ -46,6 +47,19 @@ def test_load_config_rejects_provider(tmp_path: Path, monkeypatch: pytest.Monkey
 
     with pytest.raises(MissingRuntimeConfigError):
         load_config(config_path=config_path, require_api_key=False)
+
+
+def test_load_config_reads_api_key_from_dotenv(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    dotenv_path = tmp_path / ".env"
+    config_path.write_text("provider: google_ai_studio\n", encoding="utf-8")
+    dotenv_path.write_text("GOOGLE_API_KEY=dotenv-test-key\n", encoding="utf-8")
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+    config = load_config(config_path=config_path, require_api_key=True, dotenv_path=dotenv_path)
+    assert config.google_api_key == "dotenv-test-key"
 
 
 def test_ensure_output_root_creates_directory(tmp_path: Path) -> None:

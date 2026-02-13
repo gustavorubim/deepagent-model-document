@@ -9,3 +9,6 @@ dist/
 build/
 outputs/*
 !outputs/.gitkeep
+.env
+.env.*
+!.env.example

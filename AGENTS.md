@@ -17,7 +17,7 @@ Build and maintain a CLI-first deep agent that:
 - Package/env manager: `uv`
 - Linting: `ruff`
 - Testing: `pytest` + `pytest-cov` with `>=90%` line coverage
-- LLM provider: Gemini via `langchain-google-genai` and `GOOGLE_API_KEY`
+- LLM provider: Gemini via `langchain-google-genai` and `GOOGLE_API_KEY` (loaded from `.env`)
 
 ## Contracts to preserve
 
@@ -77,7 +77,7 @@ user_response: <filled by user>
 2. `uv run ruff check src tests`
 3. `uv run pytest`
 
-Optional local smoke (requires `GOOGLE_API_KEY`):
+Optional local smoke (requires `.env` with `GOOGLE_API_KEY`):
 
 1. `uv run mrm-agent validate-template --template examples/fictitious_mrm_template.docx`
 2. `uv run mrm-agent draft --codebase examples/regression_model --template examples/fictitious_mrm_template.docx`

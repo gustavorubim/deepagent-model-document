@@ -130,39 +130,33 @@ uv run pytest --version
 
 ## API key setup
 
-`draft` requires `GOOGLE_API_KEY` in the environment.
+`draft` requires `GOOGLE_API_KEY`. The project now loads it from a local `.env` file by default.
 
-PowerShell (current terminal only):
+### Preferred: `.env` file (repo root)
+
+1. Copy the example:
+
+```bash
+cp .env.example .env
+```
+
+PowerShell equivalent:
 
 ```powershell
-$env:GOOGLE_API_KEY="your_api_key_here"
+Copy-Item .env.example .env
 ```
 
-PowerShell (persist for future terminals):
+2. Edit `.env` and set your key:
 
-```powershell
-setx GOOGLE_API_KEY "your_api_key_here"
+```env
+GOOGLE_API_KEY=your_api_key_here
 ```
 
-macOS/Linux (current shell):
+3. Run CLI commands normally (`uv run ...`). `load_config()` automatically reads `.env`.
 
-```bash
-export GOOGLE_API_KEY="your_api_key_here"
-```
+### Optional override
 
-macOS/Linux (persist):
-
-Add to `~/.bashrc` or `~/.zshrc`:
-
-```bash
-export GOOGLE_API_KEY="your_api_key_here"
-```
-
-Then reload shell:
-
-```bash
-source ~/.bashrc
-```
+If `GOOGLE_API_KEY` is also set in your shell, shell environment value takes precedence over `.env`.
 
 ## Quick run
 
