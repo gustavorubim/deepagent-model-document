@@ -54,9 +54,9 @@ def _variance(values: list[float]) -> float:
 def _covariance(first: list[float], second: list[float]) -> float:
     avg_first = _mean(first)
     avg_second = _mean(second)
-    return sum((x - avg_first) * (y - avg_second) for x, y in zip(first, second, strict=True)) / len(
-        first
-    )
+    return sum(
+        (x - avg_first) * (y - avg_second) for x, y in zip(first, second, strict=True)
+    ) / len(first)
 
 
 def main() -> None:

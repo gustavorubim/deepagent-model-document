@@ -32,5 +32,15 @@ def test_parse_template_detects_malformed_marker(tmp_path: Path) -> None:
     document.save(path)
 
     parsed = parse_template(path)
-    errors = validate_template(parsed)
-    assert any("Malformed marker heading" in error for error in errors)
+    assert parsed.sections
+    assert parsed.sections[0].section_type == SectionType.FILL
+
+
+def test_parse_template_accepts_untagged_heading_as_fillable(
+    untagged_template_path: Path,
+) -> None:
+    parsed = parse_template(untagged_template_path)
+    fill_ids = [
+        section.id for section in parsed.sections if section.section_type == SectionType.FILL
+    ]
+    assert "model_change_management" in fill_ids

@@ -6,23 +6,27 @@ import re
 from pathlib import Path
 
 from docx import Document
+from docx.table import Table
+from docx.text.paragraph import Paragraph
 
+from mrm_deepagent.docx_utils import iter_block_items, table_to_text
+from mrm_deepagent.marker_utils import parse_heading_marker
 from mrm_deepagent.models import ParsedTemplate, SectionType, TemplateSection
 
-_MARKER_RE = re.compile(
-    r"^\[(FILL|SKIP|VALIDATOR)\]\[ID:([A-Za-z0-9_-]+)\]\s+(.+?)\s*$",
-    re.IGNORECASE,
-)
 _CHECKBOX_RE = re.compile(r"\[\[CHECK:([A-Za-z0-9_-]+)\]\]")
 
 
 def parse_template(docx_path: Path) -> ParsedTemplate:
-    """Parse template headings and gather section bodies."""
+    """Parse template headings and gather section bodies.
+
+    Parsing is tolerant: untagged headings are treated as fillable sections.
+    """
     document = Document(str(docx_path))
     parsed = ParsedTemplate(source_path=str(docx_path), sections=[], parser_errors=[])
 
     current_section: TemplateSection | None = None
     body_lines: list[str] = []
+    used_ids: set[str] = set()
 
     def flush_current() -> None:
         nonlocal current_section, body_lines
@@ -35,28 +39,34 @@ def parse_template(docx_path: Path) -> ParsedTemplate:
         current_section = None
         body_lines = []
 
-    for idx, paragraph in enumerate(document.paragraphs):
-        text = paragraph.text.strip()
-        if _is_heading(paragraph.style.name if paragraph.style else ""):
-            flush_current()
-            match = _MARKER_RE.match(text)
-            if match:
-                section_type = SectionType(match.group(1).lower())
+    for idx, block in enumerate(iter_block_items(document)):
+        if isinstance(block, Paragraph):
+            text = block.text.strip()
+            style_name = block.style.name if block.style else ""
+            if _is_heading(style_name):
+                flush_current()
+                parsed_marker = parse_heading_marker(text, fallback_fill=True, used_ids=used_ids)
+                if parsed_marker is None:
+                    current_section = None
+                    continue
+                section_type, section_id, title = parsed_marker
                 current_section = TemplateSection(
-                    id=match.group(2),
-                    title=match.group(3),
+                    id=section_id,
+                    title=title,
                     section_type=section_type,
                     marker_text=text,
                     heading_index=idx,
                 )
-            else:
-                if _looks_like_marker(text):
-                    parsed.parser_errors.append(
-                        f"Malformed marker heading at paragraph {idx + 1}: '{text}'"
-                    )
-                current_section = None
-        elif current_section is not None:
-            body_lines.append(paragraph.text)
+            elif current_section is not None and text:
+                body_lines.append(text)
+            continue
+
+        if isinstance(block, Table):
+            if current_section is None:
+                continue
+            table_text = table_to_text(block)
+            if table_text:
+                body_lines.append(table_text)
 
     flush_current()
     return parsed
@@ -66,7 +76,7 @@ def validate_template(parsed: ParsedTemplate) -> list[str]:
     """Return validation errors for parsed template."""
     errors = list(parsed.parser_errors)
     if not parsed.sections:
-        errors.append("No template sections found with marker tags.")
+        errors.append("No template sections found with marker tags or heading sections.")
         return errors
 
     seen: set[str] = set()
@@ -76,7 +86,7 @@ def validate_template(parsed: ParsedTemplate) -> list[str]:
         seen.add(section.id)
 
     if not any(section.section_type == SectionType.FILL for section in parsed.sections):
-        errors.append("Template must contain at least one [FILL] section.")
+        errors.append("Template must contain at least one fillable section.")
 
     return errors
 
@@ -87,7 +97,8 @@ def extract_checkbox_tokens(text: str) -> list[str]:
 
 
 def _is_heading(style_name: str) -> bool:
-    return style_name.lower().startswith("heading")
+    style_lower = style_name.lower()
+    return style_lower.startswith("heading")
 
 
 def _looks_like_marker(text: str) -> bool:

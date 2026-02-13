@@ -23,7 +23,9 @@ def evaluate(data_path: Path, model_path: Path) -> dict[str, float]:
 
     target_mean = sum(targets) / len(targets)
     ss_tot = sum((target - target_mean) ** 2 for target in targets)
-    ss_res = sum((target - prediction) ** 2 for target, prediction in zip(targets, predictions, strict=True))
+    ss_res = sum(
+        (target - prediction) ** 2 for target, prediction in zip(targets, predictions, strict=True)
+    )
     r2 = 1 - (ss_res / ss_tot)
 
     return {"mae": round(mae, 4), "rmse": round(rmse, 4), "r2": round(r2, 4)}

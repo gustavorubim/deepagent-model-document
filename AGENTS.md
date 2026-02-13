@@ -41,6 +41,7 @@ Build and maintain a CLI-first deep agent that:
 - `[SKIP][ID:<section_id>] <title>`
 - `[VALIDATOR][ID:<section_id>] <title>`
 - checkbox tokens in body: `[[CHECK:<name>]]`
+- optional narrative placeholder: `[[SECTION_CONTENT]]`
 
 ### Draft markdown format
 
