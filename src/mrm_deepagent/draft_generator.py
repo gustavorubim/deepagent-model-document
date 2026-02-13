@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import csv
+import inspect
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 from mrm_deepagent.context_manager import context_lookup
@@ -60,16 +63,39 @@ def generate_draft(
     repo_index: RepoIndex,
     context_items: list[MissingItem],
     runtime: Any,
+    retries: int = 3,
+    timeout_s: int = 90,
+    progress_callback: Callable[[str], None] | None = None,
 ) -> DraftDocument:
     """Generate draft content section-by-section in deterministic order."""
+    progress = progress_callback or (lambda _message: None)
     context_by_section = context_lookup(context_items)
     sections: list[DraftSection] = []
-    for section in parsed_template.sections:
-        if section.section_type != SectionType.FILL:
-            continue
+    fill_sections = [
+        section for section in parsed_template.sections if section.section_type == SectionType.FILL
+    ]
+    progress(f"Preparing to draft {len(fill_sections)} fillable sections.")
+
+    for idx, section in enumerate(fill_sections, start=1):
+        progress(f"[{idx}/{len(fill_sections)}] Drafting section '{section.id}' ({section.title}).")
         prompt = build_section_prompt(section, extra_context=context_by_section.get(section.id, ""))
-        response = runtime.invoke_with_retry(prompt, retries=3, timeout_s=90)
-        sections.append(_response_to_draft_section(response, section.id, section.title))
+        started_at = perf_counter()
+        response = _invoke_runtime_with_progress(
+            runtime,
+            prompt,
+            retries=retries,
+            timeout_s=timeout_s,
+            section_id=section.id,
+        )
+        parsed_section = _response_to_draft_section(response, section.id, section.title)
+        elapsed = perf_counter() - started_at
+        progress(
+            f"[{idx}/{len(fill_sections)}] Completed '{section.id}' in {elapsed:.1f}s "
+            f"(status={parsed_section.status.value}, evidence={len(parsed_section.evidence)}, "
+            f"missing={len(parsed_section.missing_items)})."
+        )
+        sections.append(parsed_section)
+
     return DraftDocument(sections=sections)
 
 
@@ -204,3 +230,22 @@ def _parse_missing_items(raw: Any, section_id: str) -> list[MissingItem]:
             )
         )
     return parsed
+
+
+def _invoke_runtime_with_progress(
+    runtime: Any,
+    prompt: str,
+    retries: int,
+    timeout_s: int,
+    section_id: str,
+) -> str:
+    invoke_method = runtime.invoke_with_retry
+    parameters = inspect.signature(invoke_method).parameters
+    if "context_label" in parameters:
+        return invoke_method(
+            prompt,
+            retries=retries,
+            timeout_s=timeout_s,
+            context_label=f"section:{section_id}",
+        )
+    return invoke_method(prompt, retries=retries, timeout_s=timeout_s)

@@ -230,7 +230,9 @@ uv run mrm-agent draft \
   --output-root outputs \
   --context-file additinal-context.md \
   --model gemini-3-flash-preview \
-  --auth-mode api
+  --auth-mode api \
+  --section-retries 3 \
+  --section-timeout-s 90
 ```
 
 M2M example:
@@ -354,6 +356,7 @@ All commands default to verbose logging (`--verbose`).
 
 - Use `--no-verbose` to reduce output to essential success/error lines.
 - Verbose lines are prefixed with `verbose:`.
+- Draft mode logs per-section progress plus per-attempt LLM call diagnostics.
 
 ## Developer checks
 

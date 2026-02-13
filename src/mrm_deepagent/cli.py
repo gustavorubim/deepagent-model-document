@@ -98,6 +98,14 @@ def draft_cmd(
         str | None,
         typer.Option(help="Path to PEM certificate bundle for TLS verification."),
     ] = None,
+    section_retries: Annotated[
+        int,
+        typer.Option(help="Number of retries per section LLM call."),
+    ] = 3,
+    section_timeout_s: Annotated[
+        int,
+        typer.Option(help="Timeout in seconds per section LLM call."),
+    ] = 90,
     config: Annotated[Path | None, typer.Option(help="Optional YAML config path.")] = None,
     verbose: Annotated[
         bool,
@@ -134,6 +142,21 @@ def draft_cmd(
             console.print(f"[red]{error}[/red]")
         raise typer.Exit(code=2)
 
+    _vprint(
+        verbose,
+        "Auth settings: "
+        f"mode={runtime_config.auth_mode.value}, "
+        f"vertexai={runtime_config.vertexai}, "
+        f"project={runtime_config.google_project or 'n/a'}, "
+        f"location={runtime_config.google_location}, "
+        f"proxy={'set' if runtime_config.https_proxy else 'unset'}, "
+        f"cert={'set' if runtime_config.ssl_cert_file else 'unset'}.",
+    )
+    _vprint(
+        verbose,
+        f"Section call policy: retries={section_retries}, timeout={section_timeout_s}s.",
+    )
+
     _vprint(verbose, f"Indexing codebase files from: {codebase}")
     repo_index = index_repo(
         codebase_path=codebase,
@@ -148,9 +171,17 @@ def draft_cmd(
     )
     tools = build_tools(repo_index, existing_context)
     _vprint(verbose, f"Built {len(tools)} agent tools.")
-    runtime = build_agent(runtime_config, tools)
+    runtime = build_agent(runtime_config, tools, log=lambda message: _vprint(verbose, message))
     _vprint(verbose, "Generating draft section-by-section with deep agent.")
-    draft = generate_draft(parsed_template, repo_index, existing_context, runtime)
+    draft = generate_draft(
+        parsed_template,
+        repo_index,
+        existing_context,
+        runtime,
+        retries=section_retries,
+        timeout_s=section_timeout_s,
+        progress_callback=lambda message: _vprint(verbose, message),
+    )
     _vprint(verbose, f"Draft contains {len(draft.sections)} fillable sections.")
 
     run_dir = _make_run_dir(ensure_output_root(runtime_config.output_root))
