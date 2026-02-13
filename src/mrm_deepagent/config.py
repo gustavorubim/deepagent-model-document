@@ -31,10 +31,11 @@ _ENV_TO_CONFIG: dict[str, str] = {
     "M2M_EXPIRES_IN_FIELD": "m2m_expires_in_field",
     "M2M_AUTH_STYLE": "m2m_auth_style",
     "M2M_TOKEN_TIMEOUT": "m2m_token_timeout",
+    "H2M_TOKEN_TTL": "h2m_token_ttl",
 }
 
 _BOOL_FIELDS = {"vertexai"}
-_INT_FIELDS = {"m2m_token_timeout"}
+_INT_FIELDS = {"m2m_token_timeout", "h2m_token_ttl"}
 
 
 def load_config(
@@ -84,8 +85,10 @@ def load_config(
                 "GOOGLE_API_KEY is required for draft generation when "
                 "auth_mode=api and vertexai is false."
             )
-    else:
+    elif config.auth_mode == AuthMode.M2M:
         _validate_m2m_config(config)
+    else:
+        _validate_h2m_config(config)
 
     return config
 
@@ -123,4 +126,16 @@ def _validate_m2m_config(config: AppConfig) -> None:
     if missing:
         raise MissingRuntimeConfigError(
             "M2M auth requires the following config values: " + ", ".join(missing)
+        )
+
+
+def _validate_h2m_config(config: AppConfig) -> None:
+    missing: list[str] = []
+    if not config.google_project:
+        missing.append("google_project")
+    if not config.vertexai:
+        missing.append("vertexai=true")
+    if missing:
+        raise MissingRuntimeConfigError(
+            "H2M auth requires the following config values: " + ", ".join(missing)
         )

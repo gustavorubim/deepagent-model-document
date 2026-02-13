@@ -96,6 +96,19 @@ def test_load_config_m2m_requires_vertex_and_fields(
         load_config(config_path=config_path, require_api_key=True)
 
 
+def test_load_config_h2m_requires_vertex_and_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("provider: google_ai_studio\nauth_mode: h2m\n", encoding="utf-8")
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("MRM_AUTH_MODE", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(MissingRuntimeConfigError, match="H2M auth requires"):
+        load_config(config_path=config_path, require_api_key=True)
+
+
 def test_load_config_m2m_from_dotenv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     config_path = tmp_path / "config.yaml"
     dotenv_path = tmp_path / ".env"
@@ -126,6 +139,38 @@ def test_load_config_m2m_from_dotenv(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert config.google_project == "my-proj"
     assert config.m2m_client_id == "cid"
     assert config.m2m_token_timeout == 45
+
+
+def test_load_config_h2m_from_dotenv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config_path = tmp_path / "config.yaml"
+    dotenv_path = tmp_path / ".env"
+    config_path.write_text("provider: google_ai_studio\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("MRM_AUTH_MODE", raising=False)
+    monkeypatch.delenv("GOOGLE_VERTEXAI", raising=False)
+    monkeypatch.delenv("GOOGLE_PROJECT", raising=False)
+    monkeypatch.delenv("GOOGLE_LOCATION", raising=False)
+    monkeypatch.delenv("H2M_TOKEN_TTL", raising=False)
+    dotenv_path.write_text(
+        "\n".join(
+            [
+                "MRM_AUTH_MODE=h2m",
+                "GOOGLE_VERTEXAI=true",
+                "GOOGLE_PROJECT=my-proj",
+                "GOOGLE_LOCATION=us-central1",
+                "H2M_TOKEN_TTL=600",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+    config = load_config(config_path=config_path, require_api_key=True, dotenv_path=dotenv_path)
+    assert config.auth_mode.value == "h2m"
+    assert config.vertexai is True
+    assert config.google_project == "my-proj"
+    assert config.h2m_token_ttl == 600
 
 
 def test_load_config_rejects_missing_ssl_cert(

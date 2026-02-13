@@ -89,8 +89,8 @@ def draft_cmd(
         "gemini-3-flash-preview"
     ),
     auth_mode: Annotated[
-        Literal["api", "m2m"],
-        typer.Option(help="Authentication mode: 'api' or 'm2m'."),
+        Literal["api", "m2m", "h2m"],
+        typer.Option(help="Authentication mode: 'api', 'm2m', or 'h2m'."),
     ] = "api",
     vertexai: Annotated[
         bool | None,

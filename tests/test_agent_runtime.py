@@ -162,6 +162,34 @@ def test_build_chat_model_m2m_uses_credentials(monkeypatch: pytest.MonkeyPatch) 
     assert captured["project"] == "proj"
 
 
+def test_build_chat_model_h2m_uses_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeChatModel:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "langchain_google_genai",
+        types.SimpleNamespace(ChatGoogleGenerativeAI=_FakeChatModel),
+    )
+    monkeypatch.setattr(
+        "mrm_deepagent.agent_runtime.build_h2m_credentials",
+        lambda _config: "h2m-creds",
+    )
+    config = AppConfig(
+        auth_mode="h2m",
+        vertexai=True,
+        google_project="proj",
+        google_location="us-central1",
+    )
+    _build_chat_model("gemini-model", config)
+    assert captured["credentials"] == "h2m-creds"
+    assert captured["vertexai"] is True
+    assert captured["project"] == "proj"
+
+
 def test_build_deep_agent_prefers_kwargs_signature(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: dict[str, object] = {}
 

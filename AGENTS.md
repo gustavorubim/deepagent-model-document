@@ -20,13 +20,14 @@ Build and maintain a CLI-first deep agent that:
 - LLM provider: Gemini via `langchain-google-genai`
   - API mode: `MRM_AUTH_MODE=api` + `GOOGLE_API_KEY`
   - M2M mode: `MRM_AUTH_MODE=m2m` + Vertex + M2M OAuth fields
+  - H2M mode: `MRM_AUTH_MODE=h2m` + Vertex + local `call_h2m_token()` hook
 
 ## Contracts to preserve
 
 ### CLI
 
 - `mrm-agent validate-template --template <path.docx|path.md>`
-- `mrm-agent draft --codebase <path> --template <path.docx|path.md> --output-root outputs --context-file <optional-path> --model gemini-3-flash-preview --auth-mode api|m2m`
+- `mrm-agent draft --codebase <path> --template <path.docx|path.md> --output-root outputs --context-file <optional-path> --model gemini-3-flash-preview --auth-mode api|m2m|h2m`
 - `mrm-agent apply --draft <draft.md> --template <path.docx|path.md> --output-root outputs`
 
 ### Exit codes

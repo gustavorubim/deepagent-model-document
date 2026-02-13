@@ -90,7 +90,8 @@ graph TD
 - `uv` installed (optional if you prefer classic `venv` + `pip`)
 - Gemini auth configured for `draft`:
   - API mode (`GOOGLE_API_KEY`) or
-  - M2M mode (`MRM_AUTH_MODE=m2m`) with Vertex AI settings
+  - M2M mode (`MRM_AUTH_MODE=m2m`) with Vertex AI settings or
+  - H2M mode (`MRM_AUTH_MODE=h2m`) with Vertex AI settings
 
 ## Environment setup
 
@@ -215,6 +216,18 @@ M2M_AUTH_STYLE=body
 M2M_TOKEN_TIMEOUT=30
 ```
 
+### Option C: H2M mode (enterprise)
+
+```env
+MRM_AUTH_MODE=h2m
+GOOGLE_VERTEXAI=true
+GOOGLE_PROJECT=your-gcp-project-id
+GOOGLE_LOCATION=us-central1
+H2M_TOKEN_TTL=3600
+```
+
+H2M mode uses a local token hook function `call_h2m_token()` from `src/mrm_deepagent/auth.py`.
+
 ### Proxy and PEM (optional)
 
 ```env
@@ -222,7 +235,7 @@ HTTPS_PROXY=https://proxy.example.corp:8443
 SSL_CERT_FILE=C:/certs/corp-ca-bundle.pem
 ```
 
-The runtime applies these for Gemini calls and M2M token refresh.
+The runtime applies these for Gemini calls and M2M/H2M token refresh.
 
 Precedence order is:
 
@@ -315,6 +328,12 @@ M2M example:
 
 ```bash
 uv run mrm-agent draft ... --auth-mode m2m --vertexai --google-project your-gcp-project-id
+```
+
+H2M example:
+
+```bash
+uv run mrm-agent draft ... --auth-mode h2m --vertexai --google-project your-gcp-project-id
 ```
 
 Custom context file location example:
@@ -475,7 +494,7 @@ Main fields:
 
 - `model`
 - `fallback_model`
-- `auth_mode` (`api` or `m2m`)
+- `auth_mode` (`api`, `m2m`, or `h2m`)
 - `vertexai`
 - `google_project`
 - `google_location`
@@ -491,6 +510,7 @@ Main fields:
 - `m2m_expires_in_field`
 - `m2m_auth_style`
 - `m2m_token_timeout`
+- `h2m_token_ttl`
 - `temperature`
 - `max_section_tokens`
 - `context_file`

@@ -21,6 +21,7 @@ m2m_token_field: access_token
 m2m_expires_in_field: expires_in
 m2m_auth_style: body
 m2m_token_timeout: 30
+h2m_token_ttl: 3600
 repo_allowlist:
   - "*.py"
   - "*.md"

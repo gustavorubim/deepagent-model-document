@@ -34,6 +34,7 @@ class AuthMode(StrEnum):
 
     API = "api"
     M2M = "m2m"
+    H2M = "h2m"
 
 
 class CheckboxToken(BaseModel):
@@ -160,3 +161,4 @@ class AppConfig(BaseModel):
     m2m_expires_in_field: str = "expires_in"
     m2m_auth_style: str = "body"
     m2m_token_timeout: int = 30
+    h2m_token_ttl: int = 3600

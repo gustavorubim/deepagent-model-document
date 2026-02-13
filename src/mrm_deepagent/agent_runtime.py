@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Any
 
-from mrm_deepagent.auth import apply_network_settings, build_m2m_credentials
+from mrm_deepagent.auth import apply_network_settings, build_h2m_credentials, build_m2m_credentials
 from mrm_deepagent.models import AppConfig
 from mrm_deepagent.prompts import SYSTEM_PROMPT
 from mrm_deepagent.tracing import RunTraceCollector
@@ -280,6 +280,13 @@ def _chat_model_kwargs(config: AppConfig) -> dict[str, Any]:
 
     if config.auth_mode.value == "m2m":
         kwargs["credentials"] = build_m2m_credentials(config)
+        kwargs["vertexai"] = True
+        kwargs["project"] = config.google_project
+        kwargs["location"] = config.google_location
+        return kwargs
+
+    if config.auth_mode.value == "h2m":
+        kwargs["credentials"] = build_h2m_credentials(config)
         kwargs["vertexai"] = True
         kwargs["project"] = config.google_project
         kwargs["location"] = config.google_location
