@@ -256,13 +256,13 @@ python -m mrm_deepagent.cli apply --draft outputs/<run_id>/draft.md --template e
 Checks whether the template can be parsed into sections.
 
 ```bash
-uv run mrm-agent validate-template --template <path.docx>
+uv run mrm-agent validate-template --template examples/fictitious_mrm_template.docx
 ```
 
 Verbosity control:
 
 ```bash
-uv run mrm-agent validate-template --template <path.docx> --no-verbose
+uv run mrm-agent validate-template --template examples/fictitious_mrm_template.docx --no-verbose
 ```
 
 What it does:
@@ -275,10 +275,26 @@ What it does:
 
 Generates a Markdown draft from template + codebase + context.
 
+PowerShell:
+
+```powershell
+uv run mrm-agent draft `
+  --codebase examples/regression_model `
+  --template examples/fictitious_mrm_template.docx `
+  --output-root outputs `
+  --context-file additional-context.md `
+  --model gemini-3-flash-preview `
+  --auth-mode api `
+  --section-retries 3 `
+  --section-timeout-s 90
+```
+
+Bash/macOS/Linux:
+
 ```bash
 uv run mrm-agent draft \
-  --codebase <path> \
-  --template <path.docx> \
+  --codebase examples/regression_model \
+  --template examples/fictitious_mrm_template.docx \
   --output-root outputs \
   --context-file additional-context.md \
   --model gemini-3-flash-preview \
@@ -294,6 +310,15 @@ uv run mrm-agent draft ... --auth-mode m2m --vertexai --google-project your-gcp-
 ```
 
 Custom context file location example:
+
+```powershell
+uv run mrm-agent draft `
+  --codebase examples/regression_model `
+  --template examples/fictitious_mrm_template.docx `
+  --context-file C:/work/mrm/context/model-a-context.md
+```
+
+Bash/macOS/Linux:
 
 ```bash
 uv run mrm-agent draft \
@@ -330,10 +355,21 @@ Also updates:
 
 Applies reviewed `draft.md` content into a copied DOCX template.
 
+PowerShell:
+
+```powershell
+uv run mrm-agent apply `
+  --draft outputs/<run_id>/draft.md `
+  --template examples/fictitious_mrm_template.docx `
+  --output-root outputs
+```
+
+Bash/macOS/Linux:
+
 ```bash
 uv run mrm-agent apply \
-  --draft <path/to/draft.md> \
-  --template <path.docx> \
+  --draft outputs/<run_id>/draft.md \
+  --template examples/fictitious_mrm_template.docx \
   --output-root outputs
 ```
 
@@ -356,7 +392,7 @@ uv run mrm-agent apply ... --force
 If you do not want to use the installed `mrm-agent` command, run module form directly:
 
 ```bash
-python -m mrm_deepagent.cli draft --codebase <path> --template <path.docx>
+python -m mrm_deepagent.cli draft --codebase examples/regression_model --template examples/fictitious_mrm_template.docx
 ```
 
 You can also drive the pipeline programmatically:
