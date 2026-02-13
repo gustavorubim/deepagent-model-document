@@ -8,7 +8,7 @@ https_proxy:
 ssl_cert_file:
 temperature: 0.1
 max_section_tokens: 4000
-context_file: additinal-context.md
+context_file: additional-context.md
 output_root: outputs
 fallback_model: gemini-2.5-flash
 m2m_token_url:

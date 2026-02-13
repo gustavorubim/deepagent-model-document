@@ -19,7 +19,7 @@ This project uses:
 - tables and checkbox tokens
 2. Reads a model codebase and extracts evidence.
 3. Generates a reviewable Markdown draft (`draft.md`) section by section.
-4. Writes missing-information prompts to `additinal-context.md`.
+4. Writes missing-information prompts to `additional-context.md`.
 5. Applies reviewed draft content into a copy of the DOCX template.
 
 ## Architecture
@@ -28,7 +28,7 @@ This project uses:
 graph TD
   A[Codebase] --> B[repo_indexer]
   T[DOCX Template] --> C[template_parser]
-  X[additinal-context.md] --> D[context_manager]
+  X[additional-context.md] --> D[context_manager]
   B --> E[draft_generator]
   C --> E
   D --> E
@@ -54,14 +54,14 @@ sequenceDiagram
   CLI->>A: invoke per [FILL] section
   A-->>CLI: section JSON output
   CLI->>O: write draft.md + summary JSONs
-  CLI->>U: update additinal-context.md
+  CLI->>U: update additional-context.md
 ```
 
 ```mermaid
 flowchart LR
   A[Run draft] --> B{Missing info?}
   B -- No --> C[Review draft.md]
-  B -- Yes --> D[Fill additinal-context.md]
+  B -- Yes --> D[Fill additional-context.md]
   D --> A
   C --> E[Run apply]
   E --> F[Generated DOCX copy]
@@ -87,20 +87,22 @@ graph TD
 ## Prerequisites
 
 - Python `3.11`
-- `uv` installed
+- `uv` installed (optional if you prefer classic `venv` + `pip`)
 - Gemini auth configured for `draft`:
   - API mode (`GOOGLE_API_KEY`) or
   - M2M mode (`MRM_AUTH_MODE=m2m`) with Vertex AI settings
 
 ## Environment setup
 
-### 1. Install dependencies
+### Option A: `uv` (recommended)
+
+#### 1. Install dependencies
 
 ```bash
 uv sync --all-groups
 ```
 
-### 2. Activate the environment (optional)
+#### 2. Activate the environment (optional)
 
 You can run everything with `uv run ...` without activating. If you prefer activation:
 
@@ -122,12 +124,53 @@ macOS/Linux:
 source .venv/bin/activate
 ```
 
-### 3. Verify install
+#### 3. Verify install
 
 ```bash
 uv run python --version
 uv run ruff --version
 uv run pytest --version
+```
+
+### Option B: classic `venv` + `pip` (no `uv`)
+
+#### 1. Create and activate virtual environment
+
+PowerShell:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+```
+
+Command Prompt:
+
+```cmd
+python -m venv .venv
+.venv\Scripts\activate.bat
+```
+
+macOS/Linux:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+#### 2. Install package and dev dependencies
+
+```bash
+python -m pip install --upgrade pip
+pip install -e .
+pip install pytest pytest-cov pytest-mock ruff
+```
+
+#### 3. Verify install
+
+```bash
+python --version
+python -m ruff --version
+python -m pytest --version
 ```
 
 ## Authentication setup (`.env`)
@@ -193,8 +236,17 @@ Precedence order is:
 ```bash
 uv run mrm-agent validate-template --template examples/fictitious_mrm_template.docx
 uv run mrm-agent draft --codebase examples/regression_model --template examples/fictitious_mrm_template.docx
-# Review/edit outputs/<run_id>/draft.md and additinal-context.md
+# Review/edit outputs/<run_id>/draft.md and additional-context.md
 uv run mrm-agent apply --draft outputs/<run_id>/draft.md --template examples/fictitious_mrm_template.docx
+```
+
+Classic `venv` + `pip` equivalent:
+
+```bash
+python -m mrm_deepagent.cli validate-template --template examples/fictitious_mrm_template.docx
+python -m mrm_deepagent.cli draft --codebase examples/regression_model --template examples/fictitious_mrm_template.docx
+# Review/edit outputs/<run_id>/draft.md and additional-context.md
+python -m mrm_deepagent.cli apply --draft outputs/<run_id>/draft.md --template examples/fictitious_mrm_template.docx
 ```
 
 ## Command reference
@@ -228,7 +280,7 @@ uv run mrm-agent draft \
   --codebase <path> \
   --template <path.docx> \
   --output-root outputs \
-  --context-file additinal-context.md \
+  --context-file additional-context.md \
   --model gemini-3-flash-preview \
   --auth-mode api \
   --section-retries 3 \
@@ -240,6 +292,17 @@ M2M example:
 ```bash
 uv run mrm-agent draft ... --auth-mode m2m --vertexai --google-project your-gcp-project-id
 ```
+
+Custom context file location example:
+
+```bash
+uv run mrm-agent draft \
+  --codebase examples/regression_model \
+  --template examples/fictitious_mrm_template.docx \
+  --context-file C:/work/mrm/context/model-a-context.md
+```
+
+Use the same `--context-file` path on later runs so the agent reuses your previous answers.
 
 Verbosity control (verbose is on by default):
 
@@ -253,10 +316,15 @@ What it writes inside `outputs/<timestamp>/`:
 - `draft-summary.json`
 - `missing-items.json`
 - `attachments-manifest.csv`
+- `trace.json` (structured runtime trace for LLM/tool/run events)
+- `trace.csv` (same trace in tabular form)
+
+Trace fields include `event_type`, `component`, `action`, `status`, `section_id`, `attempt`,
+`payload_format`, `duration_ms`, and `details`.
 
 Also updates:
 
-- `additinal-context.md` (missing questions + preserved user responses)
+- `additional-context.md` (missing questions + preserved user responses)
 
 ### `apply`
 
@@ -282,6 +350,43 @@ uv run mrm-agent apply ... --force
 ```
 
 `--force` allows re-applying when the document already contains apply marker metadata.
+
+## Execute without CLI wrapper script
+
+If you do not want to use the installed `mrm-agent` command, run module form directly:
+
+```bash
+python -m mrm_deepagent.cli draft --codebase <path> --template <path.docx>
+```
+
+You can also drive the pipeline programmatically:
+
+```python
+from pathlib import Path
+
+from mrm_deepagent.agent_runtime import build_agent
+from mrm_deepagent.config import load_config
+from mrm_deepagent.context_manager import load_context
+from mrm_deepagent.draft_generator import build_tools, generate_draft, write_run_artifacts
+from mrm_deepagent.repo_indexer import index_repo
+from mrm_deepagent.template_parser import parse_template, validate_template
+
+config = load_config(require_api_key=True)
+template = parse_template(Path("examples/fictitious_mrm_template.docx"))
+errors = validate_template(template)
+if errors:
+    raise RuntimeError(errors)
+
+index = index_repo(
+    codebase_path=Path("examples/regression_model"),
+    allowlist=config.repo_allowlist,
+    denylist=config.repo_denylist,
+)
+context = load_context(Path(config.context_file))
+runtime = build_agent(config, build_tools(index, context))
+draft = generate_draft(template, index, context, runtime)
+write_run_artifacts(Path("outputs/manual-run"), draft)
+```
 
 ## Template behavior and tokens
 
@@ -367,5 +472,5 @@ uv run pytest
 
 ## Notes
 
-- The context filename is intentionally `additinal-context.md` (spelling preserved by project contract).
+- Default context filename is `additional-context.md`.
 - `apply` never modifies the original input template path; it writes a copied output file.

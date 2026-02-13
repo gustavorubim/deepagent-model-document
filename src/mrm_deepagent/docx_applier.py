@@ -125,7 +125,7 @@ def _replace_section_body(
     if section.status.value == "partial":
         replacement_text += (
             "\n\nUNRESOLVED: This section includes missing information. "
-            "Review additinal-context.md and update."
+            "Review additional-context.md and update."
         )
 
     target_paragraph = _find_section_content_target(body_paragraphs)

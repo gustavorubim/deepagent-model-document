@@ -28,6 +28,7 @@ from mrm_deepagent.exceptions import (
 )
 from mrm_deepagent.repo_indexer import index_repo
 from mrm_deepagent.template_parser import parse_template, validate_template
+from mrm_deepagent.tracing import RunTraceCollector
 
 app = typer.Typer(help="Deep agent for model risk document drafting and application.")
 console = Console()
@@ -66,7 +67,7 @@ def draft_cmd(
     template: Annotated[Path, typer.Option(help="Path to DOCX template.")],
     output_root: Annotated[str, typer.Option(help="Root output directory.")] = "outputs",
     context_file: Annotated[str, typer.Option(help="Path to missing-context markdown file.")] = (
-        "additinal-context.md"
+        "additional-context.md"
     ),
     model: Annotated[str, typer.Option(help="Gemini model name override.")] = (
         "gemini-3-flash-preview"
@@ -113,6 +114,7 @@ def draft_cmd(
     ] = True,
 ) -> None:
     """Generate draft markdown from codebase and template."""
+    trace = RunTraceCollector()
     try:
         _vprint(verbose, "Loading runtime configuration (.env + YAML + CLI overrides).")
         runtime_config = load_config(
@@ -133,9 +135,27 @@ def draft_cmd(
     except MissingRuntimeConfigError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=3) from exc
+    trace.log(
+        event_type="run",
+        component="cli",
+        action="config_loaded",
+        status="ok",
+        details={
+            "auth_mode": runtime_config.auth_mode.value,
+            "vertexai": runtime_config.vertexai,
+            "model": runtime_config.model,
+        },
+    )
 
     parsed_template = parse_template(template)
     _vprint(verbose, f"Template parsed with {len(parsed_template.sections)} sections.")
+    trace.log(
+        event_type="run",
+        component="cli",
+        action="template_parsed",
+        status="ok",
+        details={"sections": len(parsed_template.sections), "template": str(template)},
+    )
     errors = validate_template(parsed_template)
     if errors:
         for error in errors:
@@ -164,14 +184,43 @@ def draft_cmd(
         denylist=runtime_config.repo_denylist,
     )
     _vprint(verbose, f"Indexed {len(repo_index.files)} text files.")
-    existing_context = load_context(Path(runtime_config.context_file))
+    trace.log(
+        event_type="run",
+        component="cli",
+        action="repo_indexed",
+        status="ok",
+        details={"codebase": str(codebase), "file_count": len(repo_index.files)},
+    )
+    context_path, legacy_context_path = _resolve_context_path(Path(runtime_config.context_file))
+    if legacy_context_path is not None:
+        _vprint(
+            verbose,
+            f"Detected legacy context file '{legacy_context_path.name}'. "
+            f"Migrating context into '{context_path.name}'.",
+        )
+    existing_context = load_context(context_path)
+    if legacy_context_path is not None:
+        legacy_context = load_context(legacy_context_path)
+        existing_context = merge_missing_items(existing_context, legacy_context)
     _vprint(
         verbose,
-        f"Loaded {len(existing_context)} context entries from {runtime_config.context_file}.",
+        f"Loaded {len(existing_context)} context entries from {context_path}.",
     )
-    tools = build_tools(repo_index, existing_context)
+    trace.log(
+        event_type="run",
+        component="cli",
+        action="context_loaded",
+        status="ok",
+        details={"context_path": str(context_path), "count": len(existing_context)},
+    )
+    tools = build_tools(repo_index, existing_context, trace=trace)
     _vprint(verbose, f"Built {len(tools)} agent tools.")
-    runtime = build_agent(runtime_config, tools, log=lambda message: _vprint(verbose, message))
+    runtime = build_agent(
+        runtime_config,
+        tools,
+        log=lambda message: _vprint(verbose, message),
+        trace=trace,
+    )
     _vprint(verbose, "Generating draft section-by-section with deep agent.")
     draft = generate_draft(
         parsed_template,
@@ -181,6 +230,7 @@ def draft_cmd(
         retries=section_retries,
         timeout_s=section_timeout_s,
         progress_callback=lambda message: _vprint(verbose, message),
+        trace=trace,
     )
     _vprint(verbose, f"Draft contains {len(draft.sections)} fillable sections.")
 
@@ -189,11 +239,23 @@ def draft_cmd(
     write_run_artifacts(run_dir, draft)
 
     merged_context = merge_missing_items(existing_context, collect_missing_items(draft))
-    write_context(merged_context, Path(runtime_config.context_file))
+    write_context(merged_context, context_path)
     _vprint(verbose, f"Context file updated with {len(merged_context)} total items.")
+    trace.log(
+        event_type="run",
+        component="cli",
+        action="draft_finished",
+        status="ok",
+        details={"run_dir": str(run_dir), "context_path": str(context_path)},
+    )
+    trace_json = run_dir / "trace.json"
+    trace_csv = run_dir / "trace.csv"
+    trace.write_json(trace_json)
+    trace.write_csv(trace_csv)
+    _vprint(verbose, f"Trace artifacts written: {trace_json}, {trace_csv}")
 
     console.print(f"[green]Draft generated.[/green] {run_dir / 'draft.md'}")
-    console.print(f"[green]Context updated.[/green] {Path(runtime_config.context_file)}")
+    console.print(f"[green]Context updated.[/green] {context_path}")
 
 
 @app.command("apply")
@@ -248,6 +310,18 @@ def _make_run_dir(root: Path) -> Path:
         run_dir = root / f"{stamp}-{suffix}"
     run_dir.mkdir(parents=True, exist_ok=False)
     return run_dir
+
+
+def _resolve_context_path(preferred_path: Path) -> tuple[Path, Path | None]:
+    """Resolve preferred context path and detect legacy misspelled file."""
+    legacy_path = preferred_path.with_name("additinal-context.md")
+    if (
+        preferred_path.name == "additional-context.md"
+        and not preferred_path.exists()
+        and legacy_path.exists()
+    ):
+        return preferred_path, legacy_path
+    return preferred_path, None
 
 
 def main() -> None:

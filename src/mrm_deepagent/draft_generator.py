@@ -24,9 +24,14 @@ from mrm_deepagent.models import (
 )
 from mrm_deepagent.prompts import build_section_prompt
 from mrm_deepagent.repo_indexer import RepoIndex, list_repo_files, read_index_file, search_repo
+from mrm_deepagent.tracing import RunTraceCollector
 
 
-def build_tools(repo_index: RepoIndex, context_items: list[MissingItem]) -> list[Any]:
+def build_tools(
+    repo_index: RepoIndex,
+    context_items: list[MissingItem],
+    trace: RunTraceCollector | None = None,
+) -> list[Any]:
     """Build toolset for deep agent."""
     try:
         from langchain_core.tools import tool
@@ -38,22 +43,109 @@ def build_tools(repo_index: RepoIndex, context_items: list[MissingItem]) -> list
     @tool
     def list_files(limit: int = 200) -> str:
         """List repository files available for evidence extraction."""
-        return "\n".join(list_repo_files(repo_index, limit=limit))
+        started_at = perf_counter()
+        _log_tool_trace(trace, "list_files", "start", details={"limit": limit})
+        try:
+            files = list_repo_files(repo_index, limit=limit)
+            _log_tool_trace(
+                trace,
+                "list_files",
+                "ok",
+                duration_ms=int((perf_counter() - started_at) * 1000),
+                details={"limit": limit, "result_count": len(files)},
+            )
+            return "\n".join(files)
+        except Exception as exc:  # noqa: BLE001
+            _log_tool_trace(
+                trace,
+                "list_files",
+                "error",
+                duration_ms=int((perf_counter() - started_at) * 1000),
+                details={"limit": limit, "error_type": type(exc).__name__, "error": str(exc)},
+            )
+            raise
 
     @tool
     def read_file(path: str) -> str:
         """Read repository file content by relative path."""
-        return read_index_file(repo_index, path)
+        started_at = perf_counter()
+        _log_tool_trace(trace, "read_file", "start", details={"path": path})
+        try:
+            value = read_index_file(repo_index, path)
+            _log_tool_trace(
+                trace,
+                "read_file",
+                "ok",
+                duration_ms=int((perf_counter() - started_at) * 1000),
+                details={"path": path, "size": len(value)},
+            )
+            return value
+        except Exception as exc:  # noqa: BLE001
+            _log_tool_trace(
+                trace,
+                "read_file",
+                "error",
+                duration_ms=int((perf_counter() - started_at) * 1000),
+                details={"path": path, "error_type": type(exc).__name__, "error": str(exc)},
+            )
+            raise
 
     @tool
     def search_files(query: str, limit: int = 10) -> str:
         """Search repository files containing a text query."""
-        return "\n".join(search_repo(repo_index, query, limit=limit))
+        started_at = perf_counter()
+        _log_tool_trace(
+            trace,
+            "search_files",
+            "start",
+            details={"query": query, "limit": limit},
+        )
+        try:
+            matches = search_repo(repo_index, query, limit=limit)
+            _log_tool_trace(
+                trace,
+                "search_files",
+                "ok",
+                duration_ms=int((perf_counter() - started_at) * 1000),
+                details={"query": query, "limit": limit, "result_count": len(matches)},
+            )
+            return "\n".join(matches)
+        except Exception as exc:  # noqa: BLE001
+            _log_tool_trace(
+                trace,
+                "search_files",
+                "error",
+                duration_ms=int((perf_counter() - started_at) * 1000),
+                details={
+                    "query": query,
+                    "limit": limit,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                },
+            )
+            raise
 
     @tool
     def read_context(section_id: str) -> str:
         """Read user-provided additional context for a section ID."""
-        return context_by_section.get(section_id, "")
+        started_at = perf_counter()
+        _log_tool_trace(
+            trace,
+            "read_context",
+            "start",
+            details={"section_id": section_id},
+            section_id=section_id,
+        )
+        value = context_by_section.get(section_id, "")
+        _log_tool_trace(
+            trace,
+            "read_context",
+            "ok",
+            duration_ms=int((perf_counter() - started_at) * 1000),
+            details={"section_id": section_id, "has_context": bool(value)},
+            section_id=section_id,
+        )
+        return value
 
     return [list_files, read_file, search_files, read_context]
 
@@ -66,6 +158,7 @@ def generate_draft(
     retries: int = 3,
     timeout_s: int = 90,
     progress_callback: Callable[[str], None] | None = None,
+    trace: RunTraceCollector | None = None,
 ) -> DraftDocument:
     """Generate draft content section-by-section in deterministic order."""
     progress = progress_callback or (lambda _message: None)
@@ -75,9 +168,30 @@ def generate_draft(
         section for section in parsed_template.sections if section.section_type == SectionType.FILL
     ]
     progress(f"Preparing to draft {len(fill_sections)} fillable sections.")
+    if trace is not None:
+        trace.log(
+            event_type="run",
+            component="draft_generator",
+            action="draft_start",
+            status="start",
+            details={
+                "fill_sections": len(fill_sections),
+                "repo_file_count": len(repo_index.files),
+                "context_items": len(context_items),
+            },
+        )
 
     for idx, section in enumerate(fill_sections, start=1):
         progress(f"[{idx}/{len(fill_sections)}] Drafting section '{section.id}' ({section.title}).")
+        if trace is not None:
+            trace.log(
+                event_type="section",
+                component="draft_generator",
+                action="section_start",
+                status="start",
+                section_id=section.id,
+                details={"title": section.title, "index": idx, "total": len(fill_sections)},
+            )
         prompt = build_section_prompt(section, extra_context=context_by_section.get(section.id, ""))
         started_at = perf_counter()
         try:
@@ -95,6 +209,16 @@ def generate_draft(
                 f"[{idx}/{len(fill_sections)}] FAILED '{section.id}' after {elapsed:.1f}s "
                 f"({type(exc).__name__}: {exc}). Producing partial stub."
             )
+            if trace is not None:
+                trace.log(
+                    event_type="section",
+                    component="draft_generator",
+                    action="section_complete",
+                    status="error",
+                    section_id=section.id,
+                    duration_ms=int(elapsed * 1000),
+                    details={"error_type": type(exc).__name__, "error": str(exc)},
+                )
             parsed_section = DraftSection(
                 id=section.id,
                 title=section.title,
@@ -110,6 +234,19 @@ def generate_draft(
             )
         else:
             elapsed = perf_counter() - started_at
+            if trace is not None:
+                trace.log(
+                    event_type="section",
+                    component="draft_generator",
+                    action="section_complete",
+                    status=parsed_section.status.value,
+                    section_id=section.id,
+                    duration_ms=int(elapsed * 1000),
+                    details={
+                        "evidence_count": len(parsed_section.evidence),
+                        "missing_count": len(parsed_section.missing_items),
+                    },
+                )
         progress(
             f"[{idx}/{len(fill_sections)}] Completed '{section.id}' in {elapsed:.1f}s "
             f"(status={parsed_section.status.value}, evidence={len(parsed_section.evidence)}, "
@@ -117,6 +254,17 @@ def generate_draft(
         )
         sections.append(parsed_section)
 
+    if trace is not None:
+        partial_count = len(
+            [section for section in sections if section.status == DraftStatus.PARTIAL]
+        )
+        trace.log(
+            event_type="run",
+            component="draft_generator",
+            action="draft_complete",
+            status="ok",
+            details={"sections": len(sections), "partial_sections": partial_count},
+        )
     return DraftDocument(sections=sections)
 
 
@@ -270,3 +418,25 @@ def _invoke_runtime_with_progress(
             context_label=f"section:{section_id}",
         )
     return invoke_method(prompt, retries=retries, timeout_s=timeout_s)
+
+
+def _log_tool_trace(
+    trace: RunTraceCollector | None,
+    action: str,
+    status: str,
+    *,
+    section_id: str | None = None,
+    duration_ms: int | None = None,
+    details: dict[str, Any] | str | None = None,
+) -> None:
+    if trace is None:
+        return
+    trace.log(
+        event_type="tool_call",
+        component="agent_tool",
+        action=action,
+        status=status,
+        section_id=section_id,
+        duration_ms=duration_ms,
+        details=details,
+    )

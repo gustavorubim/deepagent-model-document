@@ -51,7 +51,7 @@ def test_end_to_end_draft_and_apply(tmp_path: Path, template_path: Path) -> None
     assert (run_dir / "draft.md").exists()
 
     missing_items = collect_missing_items(draft)
-    context_path = tmp_path / "additinal-context.md"
+    context_path = tmp_path / "additional-context.md"
     write_context(merge_missing_items([], missing_items), context_path)
     loaded = load_context(context_path)
     assert loaded and loaded[0].id == "missing_review_date"

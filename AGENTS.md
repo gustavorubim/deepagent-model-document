@@ -26,7 +26,7 @@ Build and maintain a CLI-first deep agent that:
 ### CLI
 
 - `mrm-agent validate-template --template <path.docx>`
-- `mrm-agent draft --codebase <path> --template <path.docx> --output-root outputs --context-file additinal-context.md --model gemini-3-flash-preview --auth-mode api|m2m`
+- `mrm-agent draft --codebase <path> --template <path.docx> --output-root outputs --context-file additional-context.md --model gemini-3-flash-preview --auth-mode api|m2m`
 - `mrm-agent apply --draft <draft.md> --template <path.docx> --output-root outputs`
 
 ### Exit codes
@@ -62,7 +62,7 @@ Rule: each generated fill section must include at least one `evidence` entry or 
 
 ### Missing context file
 
-Use exact filename: `additinal-context.md` (intentional spelling).
+Use exact filename: `additional-context.md`.
 
 Entry format:
 

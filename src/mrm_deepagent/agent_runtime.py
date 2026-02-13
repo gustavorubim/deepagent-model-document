@@ -13,6 +13,7 @@ from typing import Any
 from mrm_deepagent.auth import apply_network_settings, build_m2m_credentials
 from mrm_deepagent.models import AppConfig
 from mrm_deepagent.prompts import SYSTEM_PROMPT
+from mrm_deepagent.tracing import RunTraceCollector
 
 _PAYLOAD_LABELS = ("raw-string", "input-dict", "messages-dict")
 
@@ -28,9 +29,15 @@ def _make_payloads(prompt: str) -> list[tuple[str, Any]]:
 class AgentRuntime:
     """Runtime wrapper that normalizes agent invocation behavior."""
 
-    def __init__(self, agent: Any, log: Callable[[str], None] | None = None):
+    def __init__(
+        self,
+        agent: Any,
+        log: Callable[[str], None] | None = None,
+        trace: RunTraceCollector | None = None,
+    ):
         self._agent = agent
         self._log = log or (lambda _message: None)
+        self._trace = trace
         self._payload_format: str | None = None
 
     def invoke_with_retry(
@@ -42,9 +49,17 @@ class AgentRuntime:
     ) -> str:
         """Invoke the agent with retry and timeout control."""
         label = context_label or "agent-call"
+        section_id = _section_id_from_label(label)
         last_error: Exception | None = None
         for attempt in range(1, retries + 1):
             self._log(f"{label}: attempt {attempt}/{retries} (timeout={timeout_s}s) started.")
+            self._trace_event(
+                action="attempt_start",
+                status="start",
+                section_id=section_id,
+                attempt=attempt,
+                details={"retries": retries, "timeout_s": timeout_s},
+            )
             started_at = time.perf_counter()
             try:
                 response = self._invoke_with_timeout(
@@ -54,6 +69,13 @@ class AgentRuntime:
                 )
                 elapsed = time.perf_counter() - started_at
                 self._log(f"{label}: attempt {attempt}/{retries} succeeded in {elapsed:.1f}s.")
+                self._trace_event(
+                    action="attempt_complete",
+                    status="ok",
+                    section_id=section_id,
+                    attempt=attempt,
+                    duration_ms=int(elapsed * 1000),
+                )
                 return response
             except Exception as exc:  # noqa: BLE001 - intentional retry wrapper
                 last_error = exc
@@ -61,6 +83,14 @@ class AgentRuntime:
                 self._log(
                     f"{label}: attempt {attempt}/{retries} failed in {elapsed:.1f}s "
                     f"({type(exc).__name__}: {exc})"
+                )
+                self._trace_event(
+                    action="attempt_complete",
+                    status="error",
+                    section_id=section_id,
+                    attempt=attempt,
+                    duration_ms=int(elapsed * 1000),
+                    details={"error_type": type(exc).__name__, "error": str(exc)},
                 )
                 if attempt < retries:
                     backoff = 0.5 * attempt
@@ -78,36 +108,104 @@ class AgentRuntime:
         except FutureTimeoutError as exc:
             future.cancel()
             executor.shutdown(wait=False)
+            self._trace_event(
+                action="timeout",
+                status="error",
+                section_id=_section_id_from_label(context_label),
+                details={"timeout_s": timeout_s},
+            )
             raise TimeoutError(f"Agent invocation timed out after {timeout_s}s.") from exc
         finally:
             executor.shutdown(wait=False)
 
     def _invoke_once(self, section_prompt: str, context_label: str = "agent-call") -> str:
+        section_id = _section_id_from_label(context_label)
         if hasattr(self._agent, "invoke"):
             if self._payload_format:
                 self._log(
                     f"{context_label}: using cached payload format {self._payload_format}."
                 )
                 payload = self._build_payload(section_prompt, self._payload_format)
+                self._trace_event(
+                    action="payload_attempt",
+                    status="start",
+                    section_id=section_id,
+                    payload_format=self._payload_format,
+                )
                 result = self._agent.invoke(payload)
+                self._trace_event(
+                    action="payload_attempt",
+                    status="ok",
+                    section_id=section_id,
+                    payload_format=self._payload_format,
+                )
                 return _response_to_text(result)
 
             candidates = _make_payloads(section_prompt)
             for label, payload in candidates:
                 try:
                     self._log(f"{context_label}: trying payload format {label}.")
+                    self._trace_event(
+                        action="payload_attempt",
+                        status="start",
+                        section_id=section_id,
+                        payload_format=label,
+                    )
                     result = self._agent.invoke(payload)
                     text = _response_to_text(result)
                     self._payload_format = label
                     self._log(f"{context_label}: locked payload format to {label}.")
+                    self._trace_event(
+                        action="payload_attempt",
+                        status="ok",
+                        section_id=section_id,
+                        payload_format=label,
+                    )
                     return text
-                except Exception:  # noqa: BLE001 - trying alternate payload shapes
+                except Exception as exc:  # noqa: BLE001 - trying alternate payload shapes
+                    self._trace_event(
+                        action="payload_attempt",
+                        status="error",
+                        section_id=section_id,
+                        payload_format=label,
+                        details={"error_type": type(exc).__name__, "error": str(exc)},
+                    )
                     continue
             raise RuntimeError("Agent invoke failed for all payload formats.")
         if callable(self._agent):
             self._log(f"{context_label}: invoking callable agent.")
+            self._trace_event(
+                action="callable_invoke",
+                status="start",
+                section_id=section_id,
+            )
             return _response_to_text(self._agent(section_prompt))
         raise RuntimeError("Agent object is not invokable.")
+
+    def _trace_event(
+        self,
+        *,
+        action: str,
+        status: str,
+        section_id: str | None = None,
+        attempt: int | None = None,
+        payload_format: str | None = None,
+        duration_ms: int | None = None,
+        details: dict[str, Any] | str | None = None,
+    ) -> None:
+        if self._trace is None:
+            return
+        self._trace.log(
+            event_type="llm_call",
+            component="agent_runtime",
+            action=action,
+            status=status,
+            section_id=section_id,
+            attempt=attempt,
+            payload_format=payload_format,
+            duration_ms=duration_ms,
+            details=details,
+        )
 
     @staticmethod
     def _build_payload(prompt: str, fmt: str) -> Any:
@@ -122,6 +220,7 @@ def build_agent(
     config: AppConfig,
     tools: list[Any],
     log: Callable[[str], None] | None = None,
+    trace: RunTraceCollector | None = None,
 ) -> AgentRuntime:
     """Build deep agent with Gemini model."""
     logger = log or (lambda _message: None)
@@ -129,6 +228,14 @@ def build_agent(
         "Initializing Gemini runtime "
         f"(auth_mode={config.auth_mode.value}, vertexai={config.vertexai})."
     )
+    if trace is not None:
+        trace.log(
+            event_type="run",
+            component="agent_runtime",
+            action="build_agent",
+            status="start",
+            details={"tool_count": len(tools), "model": config.model},
+        )
 
     model = _build_chat_model(config.model, config, log=logger)
     try:
@@ -137,7 +244,15 @@ def build_agent(
     except Exception:  # noqa: BLE001 - fallback to direct model invoke
         logger("Deep agent creation failed, using direct chat model fallback.")
         agent = model
-    return AgentRuntime(agent=agent, log=logger)
+    if trace is not None:
+        trace.log(
+            event_type="run",
+            component="agent_runtime",
+            action="build_agent",
+            status="ok",
+            details={"tool_count": len(tools), "model": config.model},
+        )
+    return AgentRuntime(agent=agent, log=logger, trace=trace)
 
 
 def _build_chat_model(
@@ -228,3 +343,11 @@ def _response_to_text(response: Any) -> str:
         except TypeError:
             return str(dumped)
     return str(response)
+
+
+def _section_id_from_label(context_label: str | None) -> str | None:
+    if not context_label:
+        return None
+    if context_label.startswith("section:"):
+        return context_label.split(":", maxsplit=1)[1] or None
+    return None

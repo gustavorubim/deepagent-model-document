@@ -64,7 +64,7 @@ def test_draft_command_creates_outputs(
     codebase = tmp_path / "repo"
     codebase.mkdir()
     (codebase / "train.py").write_text("metric = 0.91\n", encoding="utf-8")
-    context_file = tmp_path / "additinal-context.md"
+    context_file = tmp_path / "additional-context.md"
     outputs = tmp_path / "outputs"
 
     monkeypatch.chdir(tmp_path)
@@ -90,8 +90,44 @@ def test_draft_command_creates_outputs(
     run_dirs = [item for item in outputs.iterdir() if item.is_dir()]
     assert run_dirs
     assert (run_dirs[0] / "draft.md").exists()
+    assert (run_dirs[0] / "trace.json").exists()
+    assert (run_dirs[0] / "trace.csv").exists()
     assert context_file.exists()
     assert "verbose:" in result.stdout
+
+
+def test_draft_command_migrates_legacy_context_filename(
+    tmp_path: Path,
+    template_path: Path,
+    monkeypatch,
+) -> None:
+    codebase = tmp_path / "repo"
+    codebase.mkdir()
+    (codebase / "train.py").write_text("metric = 0.91\n", encoding="utf-8")
+    legacy_context_file = tmp_path / "additinal-context.md"
+    legacy_context_file.write_text(
+        (
+            "## old_item\n"
+            "section_id: exec_summary\n"
+            "question: Legacy question\n"
+            "user_response: Legacy response\n"
+        ),
+        encoding="utf-8",
+    )
+    new_context_file = tmp_path / "additional-context.md"
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    monkeypatch.setattr("mrm_deepagent.cli.build_agent", lambda *_args, **_kwargs: _FakeRuntime())
+
+    result = runner.invoke(
+        app,
+        ["draft", "--codebase", str(codebase), "--template", str(template_path)],
+    )
+    assert result.exit_code == 0
+    assert "Detected legacy context file" in result.stdout
+    assert new_context_file.exists()
+    assert "legacy response" in new_context_file.read_text(encoding="utf-8").lower()
 
 
 def test_draft_command_requires_api_key(

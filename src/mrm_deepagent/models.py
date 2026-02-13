@@ -113,7 +113,7 @@ class AppConfig(BaseModel):
     ssl_cert_file: str | None = None
     temperature: float = 0.1
     max_section_tokens: int = 4000
-    context_file: str = "additinal-context.md"
+    context_file: str = "additional-context.md"
     output_root: str = "outputs"
     fallback_model: str = "gemini-2.5-flash"
     repo_allowlist: list[str] = Field(

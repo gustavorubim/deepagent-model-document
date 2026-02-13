@@ -68,7 +68,7 @@ def test_generate_draft_and_write_artifacts(tmp_path: Path, template_path: Path)
 
     missing = collect_missing_items(draft)
     merged = merge_missing_items([], missing)
-    context_path = tmp_path / "additinal-context.md"
+    context_path = tmp_path / "additional-context.md"
     from mrm_deepagent.context_manager import write_context
 
     write_context(merged, context_path)

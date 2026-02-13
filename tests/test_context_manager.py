@@ -18,7 +18,7 @@ def test_write_and_load_context_roundtrip(tmp_path: Path) -> None:
             id="m2", section_id="exec_summary", question="Need date", user_response="2026-01-01"
         ),
     ]
-    output = tmp_path / "additinal-context.md"
+    output = tmp_path / "additional-context.md"
     write_context(items, output)
     loaded = load_context(output)
     assert len(loaded) == 2
