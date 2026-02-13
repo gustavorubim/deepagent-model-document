@@ -14,6 +14,16 @@ from mrm_deepagent.auth import apply_network_settings, build_m2m_credentials
 from mrm_deepagent.models import AppConfig
 from mrm_deepagent.prompts import SYSTEM_PROMPT
 
+_PAYLOAD_LABELS = ("raw-string", "input-dict", "messages-dict")
+
+
+def _make_payloads(prompt: str) -> list[tuple[str, Any]]:
+    return [
+        ("raw-string", prompt),
+        ("input-dict", {"input": prompt}),
+        ("messages-dict", {"messages": [{"role": "user", "content": prompt}]}),
+    ]
+
 
 class AgentRuntime:
     """Runtime wrapper that normalizes agent invocation behavior."""
@@ -21,6 +31,7 @@ class AgentRuntime:
     def __init__(self, agent: Any, log: Callable[[str], None] | None = None):
         self._agent = agent
         self._log = log or (lambda _message: None)
+        self._payload_format: str | None = None
 
     def invoke_with_retry(
         self,
@@ -60,28 +71,36 @@ class AgentRuntime:
         ) from last_error
 
     def _invoke_with_timeout(self, section_prompt: str, timeout_s: int, context_label: str) -> str:
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(self._invoke_once, section_prompt, context_label)
-            try:
-                return future.result(timeout=timeout_s)
-            except FutureTimeoutError as exc:
-                raise TimeoutError(f"Agent invocation timed out after {timeout_s}s.") from exc
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(self._invoke_once, section_prompt, context_label)
+        try:
+            return future.result(timeout=timeout_s)
+        except FutureTimeoutError as exc:
+            future.cancel()
+            executor.shutdown(wait=False)
+            raise TimeoutError(f"Agent invocation timed out after {timeout_s}s.") from exc
+        finally:
+            executor.shutdown(wait=False)
 
     def _invoke_once(self, section_prompt: str, context_label: str = "agent-call") -> str:
         if hasattr(self._agent, "invoke"):
-            payload_candidates = [
-                section_prompt,
-                {"input": section_prompt},
-                {"messages": [{"role": "user", "content": section_prompt}]},
-            ]
-            payload_labels = ["raw-string", "input-dict", "messages-dict"]
-            for idx, payload in enumerate(payload_candidates):
+            if self._payload_format:
+                self._log(
+                    f"{context_label}: using cached payload format {self._payload_format}."
+                )
+                payload = self._build_payload(section_prompt, self._payload_format)
+                result = self._agent.invoke(payload)
+                return _response_to_text(result)
+
+            candidates = _make_payloads(section_prompt)
+            for label, payload in candidates:
                 try:
-                    self._log(
-                        f"{context_label}: trying payload format {payload_labels[idx]}."
-                    )
+                    self._log(f"{context_label}: trying payload format {label}.")
                     result = self._agent.invoke(payload)
-                    return _response_to_text(result)
+                    text = _response_to_text(result)
+                    self._payload_format = label
+                    self._log(f"{context_label}: locked payload format to {label}.")
+                    return text
                 except Exception:  # noqa: BLE001 - trying alternate payload shapes
                     continue
             raise RuntimeError("Agent invoke failed for all payload formats.")
@@ -89,6 +108,14 @@ class AgentRuntime:
             self._log(f"{context_label}: invoking callable agent.")
             return _response_to_text(self._agent(section_prompt))
         raise RuntimeError("Agent object is not invokable.")
+
+    @staticmethod
+    def _build_payload(prompt: str, fmt: str) -> Any:
+        if fmt == "input-dict":
+            return {"input": prompt}
+        if fmt == "messages-dict":
+            return {"messages": [{"role": "user", "content": prompt}]}
+        return prompt
 
 
 def build_agent(

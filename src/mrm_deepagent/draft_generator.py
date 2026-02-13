@@ -80,15 +80,36 @@ def generate_draft(
         progress(f"[{idx}/{len(fill_sections)}] Drafting section '{section.id}' ({section.title}).")
         prompt = build_section_prompt(section, extra_context=context_by_section.get(section.id, ""))
         started_at = perf_counter()
-        response = _invoke_runtime_with_progress(
-            runtime,
-            prompt,
-            retries=retries,
-            timeout_s=timeout_s,
-            section_id=section.id,
-        )
-        parsed_section = _response_to_draft_section(response, section.id, section.title)
-        elapsed = perf_counter() - started_at
+        try:
+            response = _invoke_runtime_with_progress(
+                runtime,
+                prompt,
+                retries=retries,
+                timeout_s=timeout_s,
+                section_id=section.id,
+            )
+            parsed_section = _response_to_draft_section(response, section.id, section.title)
+        except Exception as exc:  # noqa: BLE001 - per-section resilience
+            elapsed = perf_counter() - started_at
+            progress(
+                f"[{idx}/{len(fill_sections)}] FAILED '{section.id}' after {elapsed:.1f}s "
+                f"({type(exc).__name__}: {exc}). Producing partial stub."
+            )
+            parsed_section = DraftSection(
+                id=section.id,
+                title=section.title,
+                status=DraftStatus.PARTIAL,
+                body="Section could not be generated due to an agent error.",
+                missing_items=[
+                    MissingItem(
+                        id=f"{section.id}_agent_error",
+                        section_id=section.id,
+                        question=f"Agent failed to generate this section: {exc}",
+                    )
+                ],
+            )
+        else:
+            elapsed = perf_counter() - started_at
         progress(
             f"[{idx}/{len(fill_sections)}] Completed '{section.id}' in {elapsed:.1f}s "
             f"(status={parsed_section.status.value}, evidence={len(parsed_section.evidence)}, "
