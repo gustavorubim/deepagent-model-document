@@ -192,7 +192,11 @@ def generate_draft(
                 section_id=section.id,
                 details={"title": section.title, "index": idx, "total": len(fill_sections)},
             )
-        prompt = build_section_prompt(section, extra_context=context_by_section.get(section.id, ""))
+        prompt = build_section_prompt(
+            section,
+            extra_context=context_by_section.get(section.id, ""),
+            template_format=parsed_template.template_format.value,
+        )
         started_at = perf_counter()
         try:
             response = _invoke_runtime_with_progress(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Literal
@@ -12,7 +13,6 @@ from rich.console import Console
 from mrm_deepagent.agent_runtime import build_agent
 from mrm_deepagent.config import ensure_output_root, load_config
 from mrm_deepagent.context_manager import load_context, merge_missing_items, write_context
-from mrm_deepagent.docx_applier import apply_draft_to_template
 from mrm_deepagent.draft_generator import (
     build_tools,
     collect_missing_items,
@@ -24,13 +24,15 @@ from mrm_deepagent.exceptions import (
     AlreadyAppliedError,
     DraftParseError,
     MissingRuntimeConfigError,
+    TemplateValidationError,
     UnsupportedTemplateError,
 )
 from mrm_deepagent.repo_indexer import index_repo
+from mrm_deepagent.template_applier import apply_draft_to_template
 from mrm_deepagent.template_parser import parse_template, validate_template
 from mrm_deepagent.tracing import RunTraceCollector
 
-app = typer.Typer(help="Deep agent for model risk document drafting and application.")
+app = typer.Typer(help="Deep agent for governance document drafting and application.")
 console = Console()
 
 
@@ -42,7 +44,7 @@ def _vprint(enabled: bool, message: str) -> None:
 
 @app.command("validate-template")
 def validate_template_cmd(
-    template: Annotated[Path, typer.Option(help="Path to DOCX template.")],
+    template: Annotated[Path, typer.Option(help="Path to template file (.docx or .md).")],
     verbose: Annotated[
         bool,
         typer.Option("--verbose/--no-verbose", help="Enable detailed logs. Enabled by default."),
@@ -50,8 +52,16 @@ def validate_template_cmd(
 ) -> None:
     """Validate template marker correctness."""
     _vprint(verbose, f"Loading template: {template}")
-    parsed = parse_template(template)
-    _vprint(verbose, f"Parsed {len(parsed.sections)} sections. Running validation checks.")
+    try:
+        parsed = parse_template(template)
+    except TemplateValidationError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from exc
+    _vprint(
+        verbose,
+        f"Parsed {len(parsed.sections)} sections "
+        f"(format={parsed.template_format.value}). Running validation checks.",
+    )
     errors = validate_template(parsed)
     if errors:
         console.print("[red]Template validation failed:[/red]")
@@ -64,11 +74,17 @@ def validate_template_cmd(
 @app.command("draft")
 def draft_cmd(
     codebase: Annotated[Path, typer.Option(help="Path to codebase to analyze.")],
-    template: Annotated[Path, typer.Option(help="Path to DOCX template.")],
+    template: Annotated[Path, typer.Option(help="Path to template file (.docx or .md).")],
     output_root: Annotated[str, typer.Option(help="Root output directory.")] = "outputs",
-    context_file: Annotated[str, typer.Option(help="Path to missing-context markdown file.")] = (
-        "additional-context.md"
-    ),
+    context_file: Annotated[
+        str | None,
+        typer.Option(
+            help=(
+                "Path to missing-context markdown file. "
+                "If omitted, defaults to contexts/<template-stem>-additional-context.md."
+            )
+        ),
+    ] = None,
     model: Annotated[str, typer.Option(help="Gemini model name override.")] = (
         "gemini-3-flash-preview"
     ),
@@ -147,14 +163,22 @@ def draft_cmd(
         },
     )
 
-    parsed_template = parse_template(template)
+    try:
+        parsed_template = parse_template(template)
+    except TemplateValidationError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from exc
     _vprint(verbose, f"Template parsed with {len(parsed_template.sections)} sections.")
     trace.log(
         event_type="run",
         component="cli",
         action="template_parsed",
         status="ok",
-        details={"sections": len(parsed_template.sections), "template": str(template)},
+        details={
+            "sections": len(parsed_template.sections),
+            "template_path": str(template),
+            "template_format": parsed_template.template_format.value,
+        },
     )
     errors = validate_template(parsed_template)
     if errors:
@@ -189,9 +213,18 @@ def draft_cmd(
         component="cli",
         action="repo_indexed",
         status="ok",
-        details={"codebase": str(codebase), "file_count": len(repo_index.files)},
+        details={
+            "codebase": str(codebase),
+            "file_count": len(repo_index.files),
+            "template_format": parsed_template.template_format.value,
+        },
     )
-    context_path, legacy_context_path = _resolve_context_path(Path(runtime_config.context_file))
+    configured_context = _configured_context_override(runtime_config.context_file)
+    explicit_context = context_file if context_file is not None else configured_context
+    context_path, legacy_context_path = _resolve_context_path(
+        template_stem=parsed_template.template_stem or template.stem,
+        explicit_context_path=explicit_context,
+    )
     if legacy_context_path is not None:
         _vprint(
             verbose,
@@ -211,7 +244,11 @@ def draft_cmd(
         component="cli",
         action="context_loaded",
         status="ok",
-        details={"context_path": str(context_path), "count": len(existing_context)},
+        details={
+            "context_path": str(context_path),
+            "count": len(existing_context),
+            "template_format": parsed_template.template_format.value,
+        },
     )
     tools = build_tools(repo_index, existing_context, trace=trace)
     _vprint(verbose, f"Built {len(tools)} agent tools.")
@@ -246,7 +283,13 @@ def draft_cmd(
         component="cli",
         action="draft_finished",
         status="ok",
-        details={"run_dir": str(run_dir), "context_path": str(context_path)},
+        details={
+            "run_dir": str(run_dir),
+            "context_path": str(context_path),
+            "template_format": parsed_template.template_format.value,
+            "template_path": str(template),
+            "output_path": str(run_dir / "draft.md"),
+        },
     )
     trace_json = run_dir / "trace.json"
     trace_csv = run_dir / "trace.csv"
@@ -261,7 +304,7 @@ def draft_cmd(
 @app.command("apply")
 def apply_cmd(
     draft: Annotated[Path, typer.Option(help="Path to reviewed draft markdown.")],
-    template: Annotated[Path, typer.Option(help="Path to DOCX template.")],
+    template: Annotated[Path, typer.Option(help="Path to template file (.docx or .md).")],
     output_root: Annotated[str, typer.Option(help="Root output directory.")] = "outputs",
     force: Annotated[bool, typer.Option(help="Allow apply to already-applied documents.")] = False,
     config: Annotated[Path | None, typer.Option(help="Optional YAML config path.")] = None,
@@ -270,7 +313,8 @@ def apply_cmd(
         typer.Option("--verbose/--no-verbose", help="Enable detailed logs. Enabled by default."),
     ] = True,
 ) -> None:
-    """Apply reviewed draft markdown content into copied DOCX template."""
+    """Apply reviewed draft markdown content into a copied template."""
+    trace = RunTraceCollector()
     _vprint(verbose, "Loading runtime configuration.")
     runtime_config = load_config(
         config_path=config,
@@ -286,17 +330,60 @@ def apply_cmd(
         raise typer.Exit(code=4) from exc
 
     run_dir = _make_run_dir(ensure_output_root(runtime_config.output_root))
-    out_doc = run_dir / "applied-document.docx"
+    try:
+        template_format = _template_format_from_path(template)
+    except UnsupportedTemplateError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=5) from exc
+    out_doc = run_dir / f"applied-document.{_output_extension(template_format)}"
     _vprint(verbose, f"Applying draft to template copy: {out_doc}")
+    configured_context = _configured_context_override(runtime_config.context_file)
+    context_path, _legacy_context = _resolve_context_path(
+        template_stem=template.stem,
+        explicit_context_path=configured_context,
+    )
+    trace.log(
+        event_type="run",
+        component="cli",
+        action="apply_start",
+        status="start",
+        details={
+            "template_path": str(template),
+            "template_format": template_format,
+            "context_path": str(context_path),
+            "output_path": str(out_doc),
+        },
+    )
 
     try:
-        report = apply_draft_to_template(template, parsed_draft, out_doc, force=force)
+        report = apply_draft_to_template(
+            template,
+            parsed_draft,
+            out_doc,
+            force=force,
+            context_reference=str(context_path),
+        )
     except (UnsupportedTemplateError, AlreadyAppliedError) as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=5) from exc
 
     unresolved_count = len(report.unresolved_section_ids)
     _vprint(verbose, f"Apply completed with {unresolved_count} unresolved sections.")
+    trace.log(
+        event_type="run",
+        component="cli",
+        action="apply_complete",
+        status="ok",
+        details={
+            "template_path": str(template),
+            "template_format": template_format,
+            "context_path": str(context_path),
+            "output_path": report.output_path,
+            "unresolved_count": unresolved_count,
+        },
+    )
+    trace.write_json(run_dir / "trace.json")
+    trace.write_csv(run_dir / "trace.csv")
     console.print(f"[green]Applied document created.[/green] {report.output_path}")
     console.print(f"Unresolved sections: {unresolved_count}")
 
@@ -312,8 +399,17 @@ def _make_run_dir(root: Path) -> Path:
     return run_dir
 
 
-def _resolve_context_path(preferred_path: Path) -> tuple[Path, Path | None]:
-    """Resolve preferred context path and detect legacy misspelled file."""
+def _resolve_context_path(
+    template_stem: str,
+    explicit_context_path: str | None,
+) -> tuple[Path, Path | None]:
+    """Resolve context path, with per-template default and legacy migration handling."""
+    if explicit_context_path:
+        preferred_path = Path(explicit_context_path)
+    else:
+        normalized_stem = _slugify_template_stem(template_stem)
+        preferred_path = Path("contexts") / f"{normalized_stem}-additional-context.md"
+
     legacy_path = preferred_path.with_name("additinal-context.md")
     if (
         preferred_path.name == "additional-context.md"
@@ -322,6 +418,39 @@ def _resolve_context_path(preferred_path: Path) -> tuple[Path, Path | None]:
     ):
         return preferred_path, legacy_path
     return preferred_path, None
+
+
+def _configured_context_override(context_file_value: str) -> str | None:
+    """Treat non-default config context value as an explicit override."""
+    if context_file_value == "additional-context.md":
+        return None
+    return context_file_value
+
+
+def _template_format_from_path(template_path: Path) -> str:
+    suffix = template_path.suffix.lower()
+    if suffix == ".docx":
+        return "docx"
+    if suffix in {".md", ".markdown"}:
+        return "markdown"
+    raise UnsupportedTemplateError(
+        f"Unsupported template extension '{template_path.suffix}'. "
+        "Supported extensions are .docx and .md."
+    )
+
+
+def _output_extension(template_format: str) -> str:
+    if template_format == "docx":
+        return "docx"
+    if template_format == "markdown":
+        return "md"
+    return "txt"
+
+
+def _slugify_template_stem(stem: str) -> str:
+    normalized = stem.strip().lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")
+    return slug or "template"
 
 
 def main() -> None:

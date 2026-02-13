@@ -5,7 +5,7 @@ from __future__ import annotations
 from mrm_deepagent.models import TemplateSection
 
 SYSTEM_PROMPT = """
-You are a model risk management documentation assistant.
+You are a governance documentation assistant.
 Rules:
 - Never invent facts or metrics.
 - Use only information in tools/context.
@@ -14,15 +14,20 @@ Rules:
 """.strip()
 
 
-def build_section_prompt(section: TemplateSection, extra_context: str = "") -> str:
+def build_section_prompt(
+    section: TemplateSection,
+    extra_context: str = "",
+    template_format: str = "unknown",
+) -> str:
     """Build prompt for a single fillable section."""
     context_block = extra_context.strip() or "None."
     return f"""
-Generate content for one model risk document section.
+Generate content for one governance document section.
 
 Section:
 - id: {section.id}
 - title: {section.title}
+- template_format: {template_format}
 - requirement text:
 {section.body_text or "(no additional requirement text provided)"}
 

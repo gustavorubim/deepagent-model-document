@@ -6,10 +6,10 @@ Guidance for agents working in this repository.
 
 Build and maintain a CLI-first deep agent that:
 
-1. Reads a codebase and an MRM DOCX template.
+1. Reads a codebase and a governance template (`.docx` or `.md`).
 2. Uses LangChain `deepagents` with Gemini (Google AI Studio API).
 3. Produces draft documentation plus missing-context prompts.
-4. Applies reviewed draft content into a copied DOCX template.
+4. Applies reviewed draft content into a copied template.
 
 ## Required stack
 
@@ -25,9 +25,9 @@ Build and maintain a CLI-first deep agent that:
 
 ### CLI
 
-- `mrm-agent validate-template --template <path.docx>`
-- `mrm-agent draft --codebase <path> --template <path.docx> --output-root outputs --context-file additional-context.md --model gemini-3-flash-preview --auth-mode api|m2m`
-- `mrm-agent apply --draft <draft.md> --template <path.docx> --output-root outputs`
+- `mrm-agent validate-template --template <path.docx|path.md>`
+- `mrm-agent draft --codebase <path> --template <path.docx|path.md> --output-root outputs --context-file <optional-path> --model gemini-3-flash-preview --auth-mode api|m2m`
+- `mrm-agent apply --draft <draft.md> --template <path.docx|path.md> --output-root outputs`
 
 ### Exit codes
 
@@ -62,7 +62,7 @@ Rule: each generated fill section must include at least one `evidence` entry or 
 
 ### Missing context file
 
-Use exact filename: `additional-context.md`.
+Default context path is `contexts/<template-stem>-additional-context.md`.
 
 Entry format:
 
@@ -88,7 +88,7 @@ Optional local smoke (requires `.env` with `GOOGLE_API_KEY`):
 
 ## Safety and behavior rules
 
-- Never modify the input template in place; always write to a copied output DOCX.
+- Never modify the input template in place; always write to a copied output file.
 - Never overwrite validator-only sections (`[VALIDATOR]`) or skipped sections (`[SKIP]`).
 - Do not fabricate facts or metrics; create `missing_items` when evidence is insufficient.
 - Preserve determinism in orchestration (section-by-section processing in template order).
@@ -100,4 +100,5 @@ Optional local smoke (requires `.env` with `GOOGLE_API_KEY`):
 - `tests/` unit/integration/CLI tests
 - `examples/regression_model/` fictitious codebase
 - `examples/fictitious_mrm_template.docx` fictitious MRM template
+- `examples/fictitious_governance_template.md` fictitious governance template
 - `outputs/` runtime artifacts

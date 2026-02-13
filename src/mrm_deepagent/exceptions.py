@@ -18,7 +18,7 @@ class DraftParseError(MRMDeepAgentError):
 
 
 class UnsupportedTemplateError(MRMDeepAgentError):
-    """Raised when a DOCX feature is unsupported by applier."""
+    """Raised when a template format/layout is unsupported by parser or applier."""
 
 
 class AlreadyAppliedError(MRMDeepAgentError):

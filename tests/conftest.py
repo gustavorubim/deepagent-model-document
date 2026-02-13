@@ -47,6 +47,50 @@ def build_template_docx(
     return path
 
 
+def build_template_markdown(path: Path, include_missing_token: bool = False) -> Path:
+    model_overview_block = """
+# [FILL][ID:model_overview] Model Overview
+
+Requirements:
+- Describe model objective.
+
+Response:
+[[SECTION_CONTENT]]
+""".strip()
+    if include_missing_token:
+        model_overview_block = model_overview_block.replace("[[SECTION_CONTENT]]", "Response here.")
+
+    text = (
+        model_overview_block
+        + "\n\n---\n\n"
+        + """
+# [FILL][ID:model_purpose] Purpose
+
+Requirements:
+- Explain business purpose.
+- Confirm intended use [[CHECK:intended_use_defined]].
+
+Response:
+[[SECTION_CONTENT]]
+
+---
+
+# [SKIP][ID:reviewer_notes] Reviewer Notes
+
+Reserved for reviewer.
+
+---
+
+# [VALIDATOR][ID:validation_signoff] Validation Signoff
+
+Reserved for validator.
+""".strip()
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text + "\n", encoding="utf-8")
+    return path
+
+
 @pytest.fixture
 def template_path(tmp_path: Path) -> Path:
     return build_template_docx(tmp_path / "template.docx")
@@ -65,3 +109,13 @@ def table_template_path(tmp_path: Path) -> Path:
 @pytest.fixture
 def untagged_template_path(tmp_path: Path) -> Path:
     return build_template_docx(tmp_path / "untagged_template.docx", include_untagged_heading=True)
+
+
+@pytest.fixture
+def markdown_template_path(tmp_path: Path) -> Path:
+    return build_template_markdown(tmp_path / "template.md")
+
+
+@pytest.fixture
+def markdown_template_missing_token_path(tmp_path: Path) -> Path:
+    return build_template_markdown(tmp_path / "bad_template.md", include_missing_token=True)

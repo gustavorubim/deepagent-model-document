@@ -15,6 +15,13 @@ class SectionType(StrEnum):
     VALIDATOR = "validator"
 
 
+class TemplateFormat(StrEnum):
+    """Supported template formats."""
+
+    DOCX = "docx"
+    MARKDOWN = "markdown"
+
+
 class DraftStatus(StrEnum):
     """Status for generated section content."""
 
@@ -52,6 +59,8 @@ class ParsedTemplate(BaseModel):
     """Entire parsed template payload."""
 
     source_path: str
+    template_format: TemplateFormat = TemplateFormat.DOCX
+    template_stem: str | None = None
     sections: list[TemplateSection] = Field(default_factory=list)
     parser_errors: list[str] = Field(default_factory=list)
 

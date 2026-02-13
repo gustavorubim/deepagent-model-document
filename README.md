@@ -1,6 +1,6 @@
 # MRM Deep Agent
 
-CLI-first deep agent to draft and apply model risk management (MRM) document updates from a codebase.
+CLI-first deep agent to draft and apply governance document updates from a codebase.
 
 This project uses:
 
@@ -12,7 +12,7 @@ This project uses:
 
 ## What the agent does
 
-1. Reads a DOCX MRM template that can include:
+1. Reads a governance template (`.docx` or `.md`) that can include:
 - strict tags (`[FILL]`, `[SKIP]`, `[VALIDATOR]`, `[ID:...]`)
 - imperfect/mixed tags
 - untagged headings
@@ -20,14 +20,14 @@ This project uses:
 2. Reads a model codebase and extracts evidence.
 3. Generates a reviewable Markdown draft (`draft.md`) section by section.
 4. Writes missing-information prompts to `additional-context.md`.
-5. Applies reviewed draft content into a copy of the DOCX template.
+5. Applies reviewed draft content into a copy of the template.
 
 ## Architecture
 
 ```mermaid
 graph TD
   A[Codebase] --> B[repo_indexer]
-  T[DOCX Template] --> C[template_parser]
+  T[Template (.docx/.md)] --> C[template_parser]
   X[additional-context.md] --> D[context_manager]
   B --> E[draft_generator]
   C --> E
@@ -37,7 +37,7 @@ graph TD
   G --> H[draft_parser]
   T --> I[docx_applier]
   H --> I
-  I --> J[applied-document.docx]
+  I --> J[applied-document.docx | applied-document.md]
 ```
 
 ```mermaid
@@ -240,6 +240,14 @@ uv run mrm-agent draft --codebase examples/regression_model --template examples/
 uv run mrm-agent apply --draft outputs/<run_id>/draft.md --template examples/fictitious_mrm_template.docx
 ```
 
+Markdown governance template example:
+
+```bash
+uv run mrm-agent validate-template --template examples/fictitious_governance_template.md
+uv run mrm-agent draft --codebase examples/regression_model --template examples/fictitious_governance_template.md
+uv run mrm-agent apply --draft outputs/<run_id>/draft.md --template examples/fictitious_governance_template.md
+```
+
 Classic `venv` + `pip` equivalent:
 
 ```bash
@@ -253,7 +261,7 @@ python -m mrm_deepagent.cli apply --draft outputs/<run_id>/draft.md --template e
 
 ### `validate-template`
 
-Checks whether the template can be parsed into sections.
+Checks whether a `.docx` or `.md` template can be parsed into sections.
 
 ```bash
 uv run mrm-agent validate-template --template examples/fictitious_mrm_template.docx
@@ -327,7 +335,11 @@ uv run mrm-agent draft \
   --context-file C:/work/mrm/context/model-a-context.md
 ```
 
-Use the same `--context-file` path on later runs so the agent reuses your previous answers.
+If `--context-file` is omitted, default path is:
+
+- `contexts/<template-stem>-additional-context.md`
+
+Use the same context path on later runs so the agent reuses your previous answers.
 
 Verbosity control (verbose is on by default):
 
@@ -349,11 +361,11 @@ Trace fields include `event_type`, `component`, `action`, `status`, `section_id`
 
 Also updates:
 
-- `additional-context.md` (missing questions + preserved user responses)
+- context file (`--context-file` path or `contexts/<template-stem>-additional-context.md`)
 
 ### `apply`
 
-Applies reviewed `draft.md` content into a copied DOCX template.
+Applies reviewed `draft.md` content into a copied template.
 
 PowerShell:
 
@@ -386,6 +398,11 @@ uv run mrm-agent apply ... --force
 ```
 
 `--force` allows re-applying when the document already contains apply marker metadata.
+
+Output filename depends on template format:
+
+- DOCX template -> `applied-document.docx`
+- Markdown template -> `applied-document.md`
 
 ## Execute without CLI wrapper script
 
@@ -426,7 +443,7 @@ write_run_artifacts(Path("outputs/manual-run"), draft)
 
 ## Template behavior and tokens
 
-Supported heading styles:
+DOCX supported heading styles:
 
 - `[FILL][ID:section_id] Title`
 - `[ID:section_id][FILL] Title`
@@ -440,6 +457,15 @@ Body/table tokens:
 - `[[SECTION_CONTENT]]` is preferred insertion point for generated narrative
 
 Without `[[SECTION_CONTENT]]`, apply falls back to the first available section paragraph/cell.
+
+Markdown template contract:
+
+- Heading must include marker tags:
+  - `[FILL][ID:<section_id>] <title>`
+  - `[SKIP][ID:<section_id>] <title>`
+  - `[VALIDATOR][ID:<section_id>] <title>`
+- Fill sections must include `[[SECTION_CONTENT]]`.
+- Optional checkbox tokens `[[CHECK:<name>]]` are supported.
 
 ## Configuration
 
@@ -475,7 +501,8 @@ Main fields:
 ## Example assets
 
 - Fictitious model repo: `examples/regression_model/`
-- Fictitious MRM template: `examples/fictitious_mrm_template.docx`
+- Fictitious MRM template (DOCX): `examples/fictitious_mrm_template.docx`
+- Fictitious governance template (Markdown): `examples/fictitious_governance_template.md`
 
 Rebuild the sample template:
 
@@ -508,5 +535,5 @@ uv run pytest
 
 ## Notes
 
-- Default context filename is `additional-context.md`.
+- Default context path is `contexts/<template-stem>-additional-context.md` unless overridden.
 - `apply` never modifies the original input template path; it writes a copied output file.
