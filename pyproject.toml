@@ -12,6 +12,7 @@ dependencies = [
   "deepagents>=0.0.10",
   "langchain>=0.3.0",
   "langchain-google-genai>=2.1.0",
+  "google-genai>=1.0.0",
   "google-auth>=2.48.0",
   "requests>=2.32.0",
   "python-docx>=1.1.2",

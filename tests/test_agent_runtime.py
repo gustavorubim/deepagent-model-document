@@ -10,6 +10,7 @@ from mrm_deepagent.agent_runtime import (
     AgentRuntime,
     _build_chat_model,
     _build_deep_agent,
+    _build_genai_client,
     _response_to_text,
     build_agent,
 )
@@ -228,3 +229,72 @@ def test_build_deep_agent_uses_positional_signature(monkeypatch: pytest.MonkeyPa
     )
     out = _build_deep_agent(model="m", tools=["t"])
     assert out == ("m", ["t"])
+
+
+def test_build_genai_client_returns_none_without_base_url_or_headers() -> None:
+    config = AppConfig(google_api_key="x")
+    assert _build_genai_client(config) is None
+
+
+def test_build_genai_client_constructs_client_with_base_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from google import genai
+    from google.genai import types as genai_types
+
+    captured: dict[str, object] = {}
+    _OrigClient = genai.Client  # noqa: N806
+
+    class _FakeClient:
+        def __init__(self, **kwargs: object) -> None:
+            captured["client_kwargs"] = kwargs
+
+    monkeypatch.setattr(genai, "Client", _FakeClient)
+
+    config = AppConfig(
+        google_api_key="x",
+        vertexai=True,
+        google_project="proj",
+        google_location="global",
+        vertex_base_url="https://gateway.corp/vertex",
+        vertex_headers={"x-soeid": "user1"},
+    )
+    client = _build_genai_client(config)
+    assert client is not None
+    client_kwargs = captured["client_kwargs"]
+    assert client_kwargs["vertexai"] is True
+    assert client_kwargs["project"] == "proj"
+    assert client_kwargs["location"] == "global"
+    http_opts = client_kwargs["http_options"]
+    assert isinstance(http_opts, genai_types.HttpOptions)
+    assert http_opts.base_url == "https://gateway.corp/vertex"
+    assert http_opts.headers == {"x-soeid": "user1"}
+
+
+def test_build_chat_model_with_custom_client_passes_client_kwarg(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeChatModel:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "langchain_google_genai",
+        types.SimpleNamespace(ChatGoogleGenerativeAI=_FakeChatModel),
+    )
+    monkeypatch.setattr(
+        "mrm_deepagent.agent_runtime._build_genai_client",
+        lambda _config: "custom-client",
+    )
+    config = AppConfig(
+        google_api_key="x",
+        vertex_base_url="https://gateway.corp/vertex",
+    )
+    _build_chat_model("gemini-model", config)
+    assert captured["client"] == "custom-client"
+    # When a custom client is used, vertexai/project/location should NOT be in kwargs
+    assert "vertexai" not in captured
+    assert "project" not in captured

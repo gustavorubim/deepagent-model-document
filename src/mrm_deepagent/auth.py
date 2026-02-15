@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import threading
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -44,19 +45,31 @@ def build_m2m_credentials(config: AppConfig) -> Credentials:
 
 def build_h2m_credentials(config: AppConfig) -> Credentials:
     """Create refreshable credentials using human-to-machine token callback."""
-    return H2MTokenCredentials(default_ttl_s=config.h2m_token_ttl)
+    return H2MTokenCredentials(
+        default_ttl_s=config.h2m_token_ttl,
+        token_cmd=config.h2m_token_cmd,
+    )
 
 
-def call_h2m_token() -> str | tuple[str, int] | dict[str, Any]:
+def call_h2m_token(cmd: str | None = None) -> str | tuple[str, int] | dict[str, Any]:
     """Return an H2M token payload.
 
-    Implement this hook in your environment to return one of:
-    - token string
-    - tuple: (token, expires_in_seconds)
-    - dict: {"access_token": "...", "expires_in": 3600}
+    When *cmd* is provided, it is executed as a shell command and the
+    stdout output is returned as the token string (leading/trailing
+    whitespace stripped).
+
+    Without *cmd*, callers can monkeypatch this function for custom
+    token retrieval logic.
     """
+    if cmd:
+        return (
+            subprocess.check_output(cmd, shell=True)  # noqa: S602
+            .decode()
+            .strip()
+        )
     raise NotImplementedError(
-        "call_h2m_token() is not implemented. Provide an implementation that returns a token."
+        "call_h2m_token() requires either H2M_TOKEN_CMD in configuration "
+        "or a monkeypatched implementation."
     )
 
 
@@ -163,11 +176,12 @@ class M2MTokenCredentials(Credentials):
 class H2MTokenCredentials(Credentials):
     """Refreshable credentials using a local H2M token callback hook."""
 
-    def __init__(self, *, default_ttl_s: int = 3600) -> None:
+    def __init__(self, *, default_ttl_s: int = 3600, token_cmd: str | None = None) -> None:
         super().__init__()
         self.token = None
         self.expiry = None
         self._default_ttl_s = default_ttl_s
+        self._token_cmd = token_cmd
         self._lock = threading.Lock()
 
     @property
@@ -193,7 +207,7 @@ class H2MTokenCredentials(Credentials):
             self.expiry = expiry
 
     def _fetch_token(self) -> tuple[str, datetime]:
-        payload = call_h2m_token()
+        payload = call_h2m_token(cmd=self._token_cmd)
         token: str | None = None
         expires_in = self._default_ttl_s
 

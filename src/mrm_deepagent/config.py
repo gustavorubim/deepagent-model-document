@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+import json
+
 import yaml
 from dotenv import load_dotenv
 from pydantic import ValidationError
@@ -32,6 +34,9 @@ _ENV_TO_CONFIG: dict[str, str] = {
     "M2M_AUTH_STYLE": "m2m_auth_style",
     "M2M_TOKEN_TIMEOUT": "m2m_token_timeout",
     "H2M_TOKEN_TTL": "h2m_token_ttl",
+    "H2M_TOKEN_CMD": "h2m_token_cmd",
+    "VERTEX_BASE_URL": "vertex_base_url",
+    "VERTEX_HEADERS": "vertex_headers",
 }
 
 _BOOL_FIELDS = {"vertexai"}
@@ -100,12 +105,17 @@ def ensure_output_root(path_value: str) -> Path:
     return path
 
 
+_JSON_FIELDS = {"vertex_headers"}
+
+
 def _coerce_env_value(config_key: str, env_value: str) -> Any:
     if config_key in _BOOL_FIELDS:
         normalized = env_value.strip().lower()
         return normalized in {"1", "true", "yes", "on"}
     if config_key in _INT_FIELDS:
         return int(env_value)
+    if config_key in _JSON_FIELDS:
+        return json.loads(env_value)
     return env_value
 
 

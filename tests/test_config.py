@@ -189,6 +189,65 @@ def test_load_config_rejects_missing_ssl_cert(
         load_config(config_path=config_path, require_api_key=False)
 
 
+def test_load_config_vertex_base_url_and_headers_from_dotenv(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    dotenv_path = tmp_path / ".env"
+    config_path.write_text("provider: google_ai_studio\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    monkeypatch.delenv("VERTEX_BASE_URL", raising=False)
+    monkeypatch.delenv("VERTEX_HEADERS", raising=False)
+    dotenv_path.write_text(
+        "\n".join(
+            [
+                "GOOGLE_API_KEY=test-key",
+                "VERTEX_BASE_URL=https://gateway.corp/vertex",
+                'VERTEX_HEADERS={"x-custom-header": "value1"}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path=config_path, require_api_key=True, dotenv_path=dotenv_path)
+    assert config.vertex_base_url == "https://gateway.corp/vertex"
+    assert config.vertex_headers == {"x-custom-header": "value1"}
+
+
+def test_load_config_h2m_token_cmd_from_dotenv(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    dotenv_path = tmp_path / ".env"
+    config_path.write_text("provider: google_ai_studio\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("MRM_AUTH_MODE", raising=False)
+    monkeypatch.delenv("GOOGLE_VERTEXAI", raising=False)
+    monkeypatch.delenv("GOOGLE_PROJECT", raising=False)
+    monkeypatch.delenv("GOOGLE_LOCATION", raising=False)
+    monkeypatch.delenv("H2M_TOKEN_CMD", raising=False)
+    monkeypatch.delenv("H2M_TOKEN_TTL", raising=False)
+    dotenv_path.write_text(
+        "\n".join(
+            [
+                "MRM_AUTH_MODE=h2m",
+                "GOOGLE_VERTEXAI=true",
+                "GOOGLE_PROJECT=my-proj",
+                "H2M_TOKEN_CMD=helix auth access-token print -a",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+    config = load_config(config_path=config_path, require_api_key=True, dotenv_path=dotenv_path)
+    assert config.h2m_token_cmd == "helix auth access-token print -a"
+    assert config.auth_mode.value == "h2m"
+
+
 def test_ensure_output_root_creates_directory(tmp_path: Path) -> None:
     out = ensure_output_root(str(tmp_path / "nested" / "out"))
     assert out.exists()

@@ -162,3 +162,6 @@ class AppConfig(BaseModel):
     m2m_auth_style: str = "body"
     m2m_token_timeout: int = 30
     h2m_token_ttl: int = 3600
+    h2m_token_cmd: str | None = None
+    vertex_base_url: str | None = None
+    vertex_headers: dict[str, str] = Field(default_factory=dict)
