@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 import time
 import types
@@ -126,8 +127,8 @@ def test_build_chat_model_uses_fallback_on_exception(monkeypatch: pytest.MonkeyP
         types.SimpleNamespace(ChatGoogleGenerativeAI=_FakeChatModel),
     )
     monkeypatch.setattr(
-        "mrm_deepagent.agent_runtime.build_h2m_credentials",
-        lambda _config: "creds",
+        "mrm_deepagent.agent_runtime.H2MTokenCredentials",
+        lambda **_kwargs: "creds",
     )
     config = AppConfig(
         model="primary",
@@ -159,8 +160,8 @@ def test_build_chat_model_h2m_uses_credentials(monkeypatch: pytest.MonkeyPatch) 
         types.SimpleNamespace(ChatGoogleGenerativeAI=_FakeChatModel),
     )
     monkeypatch.setattr(
-        "mrm_deepagent.agent_runtime.build_h2m_credentials",
-        lambda _config: "h2m-creds",
+        "mrm_deepagent.agent_runtime.H2MTokenCredentials",
+        lambda **_kwargs: "h2m-creds",
     )
     config = AppConfig(
         google_project="proj",
@@ -170,6 +171,35 @@ def test_build_chat_model_h2m_uses_credentials(monkeypatch: pytest.MonkeyPatch) 
     assert captured["credentials"] == "h2m-creds"
     assert captured["vertexai"] is True
     assert captured["project"] == "proj"
+
+
+def test_build_chat_model_sets_ssl_cert_env(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    cert_file = tmp_path / "root-ca.pem"
+    cert_file.write_text("dummy", encoding="utf-8")
+
+    class _FakeChatModel:
+        def __init__(self, **kwargs: object) -> None:
+            self.kwargs = kwargs
+
+    monkeypatch.setitem(
+        sys.modules,
+        "langchain_google_genai",
+        types.SimpleNamespace(ChatGoogleGenerativeAI=_FakeChatModel),
+    )
+    monkeypatch.setattr(
+        "mrm_deepagent.agent_runtime.H2MTokenCredentials",
+        lambda **_kwargs: "h2m-creds",
+    )
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    monkeypatch.delenv("REQUESTS_CA_BUNDLE", raising=False)
+
+    config = AppConfig(
+        google_project="proj",
+        ssl_cert_file=str(cert_file),
+    )
+    _build_chat_model("gemini-model", config)
+    assert os.environ["SSL_CERT_FILE"] == str(cert_file)
+    assert os.environ["REQUESTS_CA_BUNDLE"] == str(cert_file)
 
 
 def test_build_deep_agent_prefers_kwargs_signature(monkeypatch: pytest.MonkeyPatch) -> None:

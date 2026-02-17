@@ -1,31 +1,12 @@
-"""Authentication and network helpers for Gemini runtime."""
+"""Authentication helpers for Gemini runtime."""
 
 from __future__ import annotations
 
-import os
 import threading
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from google.auth.credentials import Credentials
-
-from mrm_deepagent.models import AppConfig
-
-
-def apply_network_settings(config: AppConfig) -> None:
-    """Apply network-related environment settings."""
-    if config.https_proxy:
-        for key in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"):
-            os.environ[key] = config.https_proxy
-
-    if config.ssl_cert_file:
-        os.environ["SSL_CERT_FILE"] = config.ssl_cert_file
-        os.environ["REQUESTS_CA_BUNDLE"] = config.ssl_cert_file
-
-
-def build_h2m_credentials(config: AppConfig) -> Credentials:
-    """Create refreshable credentials using human-to-machine token callback."""
-    return H2MTokenCredentials(default_ttl_s=config.h2m_token_ttl)
 
 
 def call_h2m_token() -> str | tuple[str, int] | dict[str, Any]:

@@ -107,10 +107,6 @@ def draft_cmd(
             help="Additional HTTP header in 'Name: Value' format. Repeat option to add multiple.",
         ),
     ] = None,
-    https_proxy: Annotated[
-        str | None,
-        typer.Option(help="HTTPS proxy URL (for example https://proxy.corp:8443)."),
-    ] = None,
     ssl_cert_file: Annotated[
         str | None,
         typer.Option(help="Path to PEM certificate bundle for TLS verification."),
@@ -144,7 +140,6 @@ def draft_cmd(
                 "google_location": google_location,
                 "base_url": base_url,
                 "additional_headers": parsed_headers,
-                "https_proxy": https_proxy,
                 "ssl_cert_file": ssl_cert_file,
             },
             validate_llm_config=True,
@@ -196,7 +191,6 @@ def draft_cmd(
         f"location={runtime_config.google_location}, "
         f"base_url={runtime_config.base_url or 'default'}, "
         f"extra_headers={len(runtime_config.additional_headers)}, "
-        f"proxy={'set' if runtime_config.https_proxy else 'unset'}, "
         f"cert={'set' if runtime_config.ssl_cert_file else 'unset'}.",
     )
     _vprint(

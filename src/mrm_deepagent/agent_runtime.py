@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import inspect
 import json
+import os
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Any
 
-from mrm_deepagent.auth import apply_network_settings, build_h2m_credentials
+from mrm_deepagent.auth import H2MTokenCredentials
 from mrm_deepagent.models import AppConfig
 from mrm_deepagent.prompts import SYSTEM_PROMPT
 from mrm_deepagent.tracing import RunTraceCollector
@@ -263,31 +264,27 @@ def _build_chat_model(
     from langchain_google_genai import ChatGoogleGenerativeAI
 
     logger = log or (lambda _message: None)
-    apply_network_settings(config)
-    logger("Applied network settings (proxy/cert if configured).")
-    common_kwargs = _chat_model_kwargs(config)
-    logger(f"Constructing chat model '{model_name}'.")
-
-    try:
-        return ChatGoogleGenerativeAI(model=model_name, **common_kwargs)
-    except Exception:  # noqa: BLE001
-        logger(f"Primary model '{model_name}' failed. Falling back to '{config.fallback_model}'.")
-        return ChatGoogleGenerativeAI(model=config.fallback_model, **common_kwargs)
-
-
-def _chat_model_kwargs(config: AppConfig) -> dict[str, Any]:
+    if config.ssl_cert_file:
+        os.environ["SSL_CERT_FILE"] = config.ssl_cert_file
+        os.environ["REQUESTS_CA_BUNDLE"] = config.ssl_cert_file
     kwargs: dict[str, Any] = {
         "temperature": config.temperature,
         "vertexai": True,
         "project": config.google_project,
         "location": config.google_location,
-        "credentials": build_h2m_credentials(config),
+        "credentials": H2MTokenCredentials(default_ttl_s=config.h2m_token_ttl),
     }
     if config.base_url:
         kwargs["base_url"] = config.base_url
     if config.additional_headers:
         kwargs["additional_headers"] = config.additional_headers
-    return kwargs
+    logger(f"Constructing chat model '{model_name}'.")
+
+    try:
+        return ChatGoogleGenerativeAI(model=model_name, **kwargs)
+    except Exception:  # noqa: BLE001
+        logger(f"Primary model '{model_name}' failed. Falling back to '{config.fallback_model}'.")
+        return ChatGoogleGenerativeAI(model=config.fallback_model, **kwargs)
 
 
 def _build_deep_agent(model: Any, tools: list[Any]) -> Any:

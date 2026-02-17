@@ -111,7 +111,6 @@ class AppConfig(BaseModel):
     google_location: str = "us-central1"
     base_url: str | None = None
     additional_headers: dict[str, str] = Field(default_factory=dict)
-    https_proxy: str | None = None
     ssl_cert_file: str | None = None
     temperature: float = 0.1
     max_section_tokens: int = 4000

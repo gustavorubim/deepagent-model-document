@@ -182,19 +182,11 @@ google_project: your-gcp-project-id
 google_location: us-central1
 base_url:
 additional_headers: {}
+ssl_cert_file: your-root-ca.pem
 h2m_token_ttl: 3600
 ```
 
 H2M token retrieval uses local hook `call_h2m_token()` in `src/mrm_deepagent/auth.py`.
-
-### Proxy and PEM (optional)
-
-```env
-HTTPS_PROXY=https://proxy.example.corp:8443
-SSL_CERT_FILE=C:/certs/corp-ca-bundle.pem
-```
-
-The runtime applies these for Gemini calls and H2M token usage.
 
 Precedence order is:
 
@@ -449,7 +441,6 @@ Main fields:
 - `google_location`
 - `base_url`
 - `additional_headers`
-- `https_proxy`
 - `ssl_cert_file`
 - `h2m_token_ttl`
 - `temperature`
