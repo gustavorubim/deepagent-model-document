@@ -7,9 +7,9 @@ name = "mrm-deepagent"
 version = "0.1.0"
 description = "Deep agent for generating and applying model risk management documentation updates."
 readme = "README.md"
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.11,<3.14"
 dependencies = [
-  "deepagents>=0.0.10",
+  "deepagents",
   "langchain>=0.3.0",
   "langchain-google-genai>=2.1.0",
   "google-auth>=2.48.0",

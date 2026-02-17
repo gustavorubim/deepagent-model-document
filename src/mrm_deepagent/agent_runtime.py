@@ -266,7 +266,7 @@ def _build_chat_model(
     logger(f"Constructing chat model '{config.model}'.")
     return ChatGoogleGenerativeAI(
         model=config.model,
-        google_api_key="AIzaSyDxja9kAnDW7YbHjzhu-Ktol-jkkSHZuU8",
+        google_api_key="aaa",
     )
 
 
