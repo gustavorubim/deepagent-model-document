@@ -199,11 +199,14 @@ uv run mrm-agent apply --draft outputs/<run_id>/draft.md --template examples/fic
 
 Classic `venv` + `pip` equivalent:
 
+Requires `pip install -e .` first. If you did not install the package, prefix with
+`PYTHONPATH=src`.
+
 ```bash
-python -m mrm_deepagent.cli validate-template --template examples/fictitious_mrm_template.docx
-python -m mrm_deepagent.cli draft --codebase examples/regression_model --template examples/fictitious_mrm_template.docx
+PYTHONPATH=src python -m mrm_deepagent.cli validate-template --template examples/fictitious_mrm_template.docx
+PYTHONPATH=src python -m mrm_deepagent.cli draft --codebase examples/regression_model --template examples/fictitious_mrm_template.docx
 # Review/edit outputs/<run_id>/draft.md and additional-context.md
-python -m mrm_deepagent.cli apply --draft outputs/<run_id>/draft.md --template examples/fictitious_mrm_template.docx
+PYTHONPATH=src python -m mrm_deepagent.cli apply --draft outputs/<run_id>/draft.md --template examples/fictitious_mrm_template.docx
 ```
 
 ## Command reference
@@ -350,7 +353,7 @@ Output filename depends on template format:
 If you do not want to use the installed `mrm-agent` command, run module form directly:
 
 ```bash
-python -m mrm_deepagent.cli draft --codebase examples/regression_model --template examples/fictitious_mrm_template.docx
+PYTHONPATH=src python -m mrm_deepagent.cli draft --codebase examples/regression_model --template examples/fictitious_mrm_template.docx
 ```
 
 You can also drive the pipeline programmatically:

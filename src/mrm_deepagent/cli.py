@@ -5,10 +5,11 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 
 from mrm_deepagent.agent_runtime import build_agent
 from mrm_deepagent.config import ensure_output_root, load_config
@@ -39,7 +40,45 @@ console = Console()
 def _vprint(enabled: bool, message: str) -> None:
     """Print verbose progress messages."""
     if enabled:
-        console.print(f"[cyan]verbose:[/cyan] {message}")
+        console.print(f"[cyan]verbose:[/cyan] {escape(message)}")
+
+
+def _configure_trace_streaming(trace: RunTraceCollector, enabled: bool) -> None:
+    """Enable live trace-event printing in verbose mode."""
+    if not enabled:
+        trace.set_live_sink(None)
+        return
+
+    def _sink(event: dict[str, Any]) -> None:
+        section = event.get("section_id") or "-"
+        attempt = event.get("attempt")
+        payload = event.get("payload_format") or "-"
+        duration = event.get("duration_ms")
+        details = _truncate_details(str(event.get("details", "")))
+        parts = [
+            f"trace[{event.get('seq', '?')}]",
+            f"{event.get('event_type', '')}",
+            f"{event.get('component', '')}.{event.get('action', '')}",
+            f"status={event.get('status', '')}",
+            f"section={section}",
+            f"attempt={attempt if attempt != '' else '-'}",
+        ]
+        if payload != "-":
+            parts.append(f"payload={payload}")
+        if duration != "":
+            parts.append(f"duration_ms={duration}")
+        if details:
+            parts.append(f"details={details}")
+        _vprint(True, " ".join(parts))
+
+    trace.set_live_sink(_sink)
+
+
+def _truncate_details(text: str, max_len: int = 240) -> str:
+    value = text.strip()
+    if len(value) <= max_len:
+        return value
+    return f"{value[: max_len - 3]}..."
 
 
 @app.command("validate-template")
@@ -105,6 +144,7 @@ def draft_cmd(
 ) -> None:
     """Generate draft markdown from codebase and template."""
     trace = RunTraceCollector()
+    _configure_trace_streaming(trace, verbose)
     try:
         _vprint(verbose, "Loading runtime configuration (YAML + CLI overrides).")
         runtime_config = load_config(
@@ -274,6 +314,7 @@ def apply_cmd(
 ) -> None:
     """Apply reviewed draft markdown content into a copied template."""
     trace = RunTraceCollector()
+    _configure_trace_streaming(trace, verbose)
     _vprint(verbose, "Loading runtime configuration.")
     runtime_config = load_config(
         config_path=config,

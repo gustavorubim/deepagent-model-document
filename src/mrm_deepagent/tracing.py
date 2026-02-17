@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import json
 import threading
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,12 @@ class RunTraceCollector:
         self._events: list[dict[str, Any]] = []
         self._next_seq = 1
         self._lock = threading.Lock()
+        self._live_sink: Callable[[dict[str, Any]], None] | None = None
+
+    def set_live_sink(self, sink: Callable[[dict[str, Any]], None] | None) -> None:
+        """Set optional callback to stream trace events as they are recorded."""
+        with self._lock:
+            self._live_sink = sink
 
     def log(
         self,
@@ -46,6 +53,8 @@ class RunTraceCollector:
         details: dict[str, Any] | str | None = None,
     ) -> None:
         """Record a structured trace event."""
+        sink: Callable[[dict[str, Any]], None] | None = None
+        event_copy: dict[str, Any] | None = None
         with self._lock:
             event = {
                 "seq": self._next_seq,
@@ -62,6 +71,15 @@ class RunTraceCollector:
             }
             self._events.append(event)
             self._next_seq += 1
+            sink = self._live_sink
+            if sink is not None:
+                event_copy = dict(event)
+        if sink is not None and event_copy is not None:
+            try:
+                sink(event_copy)
+            except Exception:
+                # Trace streaming must never interfere with the main run flow.
+                pass
 
     def events(self) -> list[dict[str, Any]]:
         """Return a shallow copy of collected events."""

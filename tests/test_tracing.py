@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 from pathlib import Path
+from typing import Any
 
 from mrm_deepagent.tracing import RunTraceCollector
 
@@ -47,3 +48,20 @@ def test_run_trace_collector_writes_json_and_csv(tmp_path: Path) -> None:
     assert len(rows) == 2
     assert rows[0]["component"] == "agent_runtime"
     assert rows[1]["action"] == "read_file"
+
+
+def test_run_trace_collector_streams_live_events() -> None:
+    seen: list[dict[str, Any]] = []
+    trace = RunTraceCollector()
+    trace.set_live_sink(lambda event: seen.append(event))
+    trace.log(
+        event_type="run",
+        component="cli",
+        action="config_loaded",
+        status="ok",
+        details={"model": "gemini-3-flash-preview"},
+    )
+
+    assert len(seen) == 1
+    assert seen[0]["event_type"] == "run"
+    assert seen[0]["component"] == "cli"
