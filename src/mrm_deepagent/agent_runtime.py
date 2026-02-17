@@ -11,12 +11,12 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Any
 
-from mrm_deepagent.auth import H2MTokenCredentials
 from mrm_deepagent.models import AppConfig
 from mrm_deepagent.prompts import SYSTEM_PROMPT
 from mrm_deepagent.tracing import RunTraceCollector
 
 _PAYLOAD_LABELS = ("raw-string", "input-dict", "messages-dict")
+_API_KEY_ENV_VAR = "GOOGLE_API_KEY"
 
 
 def _make_payloads(prompt: str) -> list[tuple[str, Any]]:
@@ -225,10 +225,7 @@ def build_agent(
 ) -> AgentRuntime:
     """Build deep agent with Gemini model."""
     logger = log or (lambda _message: None)
-    logger(
-        "Initializing Gemini runtime "
-        f"(vertexai=True, project={config.google_project}, location={config.google_location})."
-    )
+    logger("Initializing Gemini runtime using API key auth.")
     if trace is not None:
         trace.log(
             event_type="run",
@@ -257,34 +254,22 @@ def build_agent(
 
 
 def _build_chat_model(
-    model_name: str,
+    _model_name: str,
     config: AppConfig,
     log: Callable[[str], None] | None = None,
 ) -> Any:
     from langchain_google_genai import ChatGoogleGenerativeAI
 
     logger = log or (lambda _message: None)
-    if config.ssl_cert_file:
-        os.environ["SSL_CERT_FILE"] = config.ssl_cert_file
-        os.environ["REQUESTS_CA_BUNDLE"] = config.ssl_cert_file
+    api_key = os.getenv(_API_KEY_ENV_VAR, "").strip()
+    if not api_key:
+        raise RuntimeError(f"Missing {_API_KEY_ENV_VAR}. Set it before running draft.")
     kwargs: dict[str, Any] = {
         "temperature": config.temperature,
-        "vertexai": True,
-        "project": config.google_project,
-        "location": config.google_location,
-        "credentials": H2MTokenCredentials(default_ttl_s=config.h2m_token_ttl),
+        "google_api_key": api_key,
     }
-    if config.base_url:
-        kwargs["base_url"] = config.base_url
-    if config.additional_headers:
-        kwargs["additional_headers"] = config.additional_headers
-    logger(f"Constructing chat model '{model_name}'.")
-
-    try:
-        return ChatGoogleGenerativeAI(model=model_name, **kwargs)
-    except Exception:  # noqa: BLE001
-        logger(f"Primary model '{model_name}' failed. Falling back to '{config.fallback_model}'.")
-        return ChatGoogleGenerativeAI(model=config.fallback_model, **kwargs)
+    logger(f"Constructing chat model '{config.model}'.")
+    return ChatGoogleGenerativeAI(model=config.model, **kwargs)
 
 
 def _build_deep_agent(model: Any, tools: list[Any]) -> Any:

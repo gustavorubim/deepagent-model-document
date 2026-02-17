@@ -12,9 +12,9 @@ from mrm_deepagent.models import AppConfig
 def test_live_gemini_smoke() -> None:
     if os.getenv("RUN_LIVE_TESTS") != "1":
         pytest.skip("Set RUN_LIVE_TESTS=1 to enable live Gemini smoke tests.")
-    if not os.getenv("GOOGLE_PROJECT"):
-        pytest.skip("GOOGLE_PROJECT not set.")
-    config = AppConfig(google_project=os.getenv("GOOGLE_PROJECT"))
+    if not os.getenv("GOOGLE_API_KEY"):
+        pytest.skip("GOOGLE_API_KEY not set.")
+    config = AppConfig()
     runtime = build_agent(config, tools=[])
     prompt = (
         'Return JSON: {"body":"ok","checkboxes":[],"attachments":[],'

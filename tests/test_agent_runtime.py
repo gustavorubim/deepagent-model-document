@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import sys
 import time
 import types
@@ -55,7 +54,7 @@ def test_build_agent_falls_back_when_deepagents_creation_fails(
         lambda *_, **__: (_ for _ in ()).throw(RuntimeError("boom")),
     )
 
-    config = AppConfig(google_project="proj")
+    config = AppConfig()
     runtime = build_agent(config, tools=[])
     assert runtime.invoke_with_retry("hello", retries=1, timeout_s=1) == "hello"
 
@@ -108,98 +107,30 @@ def test_response_to_text_handles_non_json_model_dump() -> None:
     assert "bad" in text
 
 
-def test_build_chat_model_uses_fallback_on_exception(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[dict[str, object]] = []
-
-    class _FakeChatModel:
-        def __init__(self, **kwargs: object) -> None:
-            calls.append(kwargs)
-            if kwargs.get("model") == "primary":
-                raise ValueError("bad primary")
-            self.model = kwargs["model"]
-            self.project = kwargs.get("project")
-            self.base_url = kwargs.get("base_url")
-            self.temperature = kwargs.get("temperature")
-
-    monkeypatch.setitem(
-        sys.modules,
-        "langchain_google_genai",
-        types.SimpleNamespace(ChatGoogleGenerativeAI=_FakeChatModel),
-    )
-    monkeypatch.setattr(
-        "mrm_deepagent.agent_runtime.H2MTokenCredentials",
-        lambda **_kwargs: "creds",
-    )
-    config = AppConfig(
-        model="primary",
-        fallback_model="fallback",
-        google_project="proj",
-        base_url="https://vertex.example",
-        additional_headers={"x-tenant": "acme"},
-    )
-    model = _build_chat_model("primary", config)
-    assert getattr(model, "model") == "fallback"
-    assert [call["model"] for call in calls] == ["primary", "fallback"]
-    assert calls[1]["vertexai"] is True
-    assert calls[1]["project"] == "proj"
-    assert calls[1]["credentials"] == "creds"
-    assert calls[1]["base_url"] == "https://vertex.example"
-    assert calls[1]["additional_headers"] == {"x-tenant": "acme"}
-
-
-def test_build_chat_model_h2m_uses_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_build_chat_model_uses_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 
     class _FakeChatModel:
         def __init__(self, **kwargs: object) -> None:
             captured.update(kwargs)
+            self.model = kwargs["model"]
 
     monkeypatch.setitem(
         sys.modules,
         "langchain_google_genai",
         types.SimpleNamespace(ChatGoogleGenerativeAI=_FakeChatModel),
     )
-    monkeypatch.setattr(
-        "mrm_deepagent.agent_runtime.H2MTokenCredentials",
-        lambda **_kwargs: "h2m-creds",
-    )
-    config = AppConfig(
-        google_project="proj",
-        google_location="us-central1",
-    )
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    config = AppConfig(model="primary")
     _build_chat_model("gemini-model", config)
-    assert captured["credentials"] == "h2m-creds"
-    assert captured["vertexai"] is True
-    assert captured["project"] == "proj"
+    assert captured["google_api_key"] == "test-key"
+    assert captured["model"] == "primary"
 
 
-def test_build_chat_model_sets_ssl_cert_env(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-    cert_file = tmp_path / "root-ca.pem"
-    cert_file.write_text("dummy", encoding="utf-8")
-
-    class _FakeChatModel:
-        def __init__(self, **kwargs: object) -> None:
-            self.kwargs = kwargs
-
-    monkeypatch.setitem(
-        sys.modules,
-        "langchain_google_genai",
-        types.SimpleNamespace(ChatGoogleGenerativeAI=_FakeChatModel),
-    )
-    monkeypatch.setattr(
-        "mrm_deepagent.agent_runtime.H2MTokenCredentials",
-        lambda **_kwargs: "h2m-creds",
-    )
-    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
-    monkeypatch.delenv("REQUESTS_CA_BUNDLE", raising=False)
-
-    config = AppConfig(
-        google_project="proj",
-        ssl_cert_file=str(cert_file),
-    )
-    _build_chat_model("gemini-model", config)
-    assert os.environ["SSL_CERT_FILE"] == str(cert_file)
-    assert os.environ["REQUESTS_CA_BUNDLE"] == str(cert_file)
+def test_build_chat_model_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="Missing GOOGLE_API_KEY"):
+        _build_chat_model("gemini-model", AppConfig())
 
 
 def test_build_deep_agent_prefers_kwargs_signature(monkeypatch: pytest.MonkeyPatch) -> None:

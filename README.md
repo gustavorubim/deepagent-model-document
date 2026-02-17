@@ -88,9 +88,8 @@ graph TD
 
 - Python `3.11`
 - `uv` installed (optional if you prefer classic `venv` + `pip`)
-- Gemini H2M auth configured for `draft`:
-  - `google_project` configured via `mrm_agent.yaml` or CLI
-  - local `call_h2m_token()` implementation in `src/mrm_deepagent/auth.py`
+- Gemini API key auth configured for `draft`:
+  - `GOOGLE_API_KEY` must be set in the environment
 
 ## Environment setup
 
@@ -173,31 +172,19 @@ python -m ruff --version
 python -m pytest --version
 ```
 
-## Authentication setup (H2M)
+## Authentication setup (API key)
 
-Configure runtime values in `mrm_agent.yaml` (or pass CLI overrides):
+Set your API key in the shell before running `draft`:
 
-```yaml
-google_project: your-gcp-project-id
-google_location: us-central1
-base_url:
-additional_headers: {}
-ssl_cert_file: your-root-ca.pem
-h2m_token_ttl: 3600
+```bash
+export GOOGLE_API_KEY=your_google_ai_studio_api_key_here
 ```
-
-H2M token retrieval uses local hook `call_h2m_token()` in `src/mrm_deepagent/auth.py`.
-
-Precedence order is:
-
-1. CLI arguments
-2. `mrm_agent.yaml`
 
 ## Quick run
 
 ```bash
 uv run mrm-agent validate-template --template examples/fictitious_mrm_template.docx
-uv run mrm-agent draft --codebase examples/regression_model --template examples/fictitious_mrm_template.docx --google-project your-gcp-project-id
+uv run mrm-agent draft --codebase examples/regression_model --template examples/fictitious_mrm_template.docx
 # Review/edit outputs/<run_id>/draft.md and additional-context.md
 uv run mrm-agent apply --draft outputs/<run_id>/draft.md --template examples/fictitious_mrm_template.docx
 ```
@@ -206,7 +193,7 @@ Markdown governance template example:
 
 ```bash
 uv run mrm-agent validate-template --template examples/fictitious_governance_template.md
-uv run mrm-agent draft --codebase examples/regression_model --template examples/fictitious_governance_template.md --google-project your-gcp-project-id
+uv run mrm-agent draft --codebase examples/regression_model --template examples/fictitious_governance_template.md
 uv run mrm-agent apply --draft outputs/<run_id>/draft.md --template examples/fictitious_governance_template.md
 ```
 
@@ -214,7 +201,7 @@ Classic `venv` + `pip` equivalent:
 
 ```bash
 python -m mrm_deepagent.cli validate-template --template examples/fictitious_mrm_template.docx
-python -m mrm_deepagent.cli draft --codebase examples/regression_model --template examples/fictitious_mrm_template.docx --google-project your-gcp-project-id
+python -m mrm_deepagent.cli draft --codebase examples/regression_model --template examples/fictitious_mrm_template.docx
 # Review/edit outputs/<run_id>/draft.md and additional-context.md
 python -m mrm_deepagent.cli apply --draft outputs/<run_id>/draft.md --template examples/fictitious_mrm_template.docx
 ```
@@ -254,7 +241,6 @@ uv run mrm-agent draft `
   --output-root outputs `
   --context-file additional-context.md `
   --model gemini-3-flash-preview `
-  --google-project your-gcp-project-id `
   --section-retries 3 `
   --section-timeout-s 90
 ```
@@ -268,15 +254,8 @@ uv run mrm-agent draft \
   --output-root outputs \
   --context-file additional-context.md \
   --model gemini-3-flash-preview \
-  --google-project your-gcp-project-id \
   --section-retries 3 \
   --section-timeout-s 90
-```
-
-Custom endpoint and headers example:
-
-```bash
-uv run mrm-agent draft ... --google-project your-gcp-project-id --base-url https://vertex.example --additional-header "x-tenant: acme"
 ```
 
 Custom context file location example:
@@ -386,7 +365,7 @@ from mrm_deepagent.draft_generator import build_tools, generate_draft, write_run
 from mrm_deepagent.repo_indexer import index_repo
 from mrm_deepagent.template_parser import parse_template, validate_template
 
-config = load_config(require_api_key=True)
+config = load_config()
 template = parse_template(Path("examples/fictitious_mrm_template.docx"))
 errors = validate_template(template)
 if errors:
@@ -436,13 +415,6 @@ Default config file: `mrm_agent.yaml`
 Main fields:
 
 - `model`
-- `fallback_model`
-- `google_project`
-- `google_location`
-- `base_url`
-- `additional_headers`
-- `ssl_cert_file`
-- `h2m_token_ttl`
 - `temperature`
 - `max_section_tokens`
 - `context_file`
@@ -466,7 +438,7 @@ uv run python examples/build_fictitious_mrm_template.py
 
 - `0` success
 - `2` invalid template markers/schema
-- `3` missing required runtime config (for example `google_project`)
+- `3` missing required runtime config (for example `GOOGLE_API_KEY`)
 - `4` invalid/unparseable draft markdown
 - `5` unsupported/unsafe apply operation
 

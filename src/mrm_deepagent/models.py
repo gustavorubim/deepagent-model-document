@@ -106,17 +106,10 @@ class AppConfig(BaseModel):
     """Runtime configuration."""
 
     model: str = "gemini-3-flash-preview"
-    provider: str = "google_ai_studio"
-    google_project: str | None = None
-    google_location: str = "us-central1"
-    base_url: str | None = None
-    additional_headers: dict[str, str] = Field(default_factory=dict)
-    ssl_cert_file: str | None = None
     temperature: float = 0.1
     max_section_tokens: int = 4000
     context_file: str = "additional-context.md"
     output_root: str = "outputs"
-    fallback_model: str = "gemini-2.5-flash"
     repo_allowlist: list[str] = Field(
         default_factory=lambda: [
             "*.py",
@@ -141,4 +134,3 @@ class AppConfig(BaseModel):
             "*.pkl",
         ]
     )
-    h2m_token_ttl: int = 3600
