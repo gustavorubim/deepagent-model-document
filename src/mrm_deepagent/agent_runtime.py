@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import inspect
 import json
-import os
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -16,7 +15,6 @@ from mrm_deepagent.prompts import SYSTEM_PROMPT
 from mrm_deepagent.tracing import RunTraceCollector
 
 _PAYLOAD_LABELS = ("raw-string", "input-dict", "messages-dict")
-_API_KEY_ENV_VAR = "GOOGLE_API_KEY"
 
 
 def _make_payloads(prompt: str) -> list[tuple[str, Any]]:
@@ -225,7 +223,7 @@ def build_agent(
 ) -> AgentRuntime:
     """Build deep agent with Gemini model."""
     logger = log or (lambda _message: None)
-    logger("Initializing Gemini runtime using API key auth.")
+    logger("Initializing Gemini runtime using direct API key auth.")
     if trace is not None:
         trace.log(
             event_type="run",
@@ -261,15 +259,11 @@ def _build_chat_model(
     from langchain_google_genai import ChatGoogleGenerativeAI
 
     logger = log or (lambda _message: None)
-    api_key = os.getenv(_API_KEY_ENV_VAR, "").strip()
-    if not api_key:
-        raise RuntimeError(f"Missing {_API_KEY_ENV_VAR}. Set it before running draft.")
-    kwargs: dict[str, Any] = {
-        "temperature": config.temperature,
-        "google_api_key": api_key,
-    }
     logger(f"Constructing chat model '{config.model}'.")
-    return ChatGoogleGenerativeAI(model=config.model, **kwargs)
+    return ChatGoogleGenerativeAI(
+        model=config.model,
+        google_api_key="aaa",
+    )
 
 
 def _build_deep_agent(model: Any, tools: list[Any]) -> Any:

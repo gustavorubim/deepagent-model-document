@@ -120,17 +120,27 @@ def test_build_chat_model_uses_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
         "langchain_google_genai",
         types.SimpleNamespace(ChatGoogleGenerativeAI=_FakeChatModel),
     )
-    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
     config = AppConfig(model="primary")
     _build_chat_model("gemini-model", config)
-    assert captured["google_api_key"] == "test-key"
+    assert captured["google_api_key"] == "aaa"
     assert captured["model"] == "primary"
 
 
-def test_build_chat_model_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-    with pytest.raises(RuntimeError, match="Missing GOOGLE_API_KEY"):
-        _build_chat_model("gemini-model", AppConfig())
+def test_build_chat_model_ignores_env_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeChatModel:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "langchain_google_genai",
+        types.SimpleNamespace(ChatGoogleGenerativeAI=_FakeChatModel),
+    )
+    monkeypatch.setenv("GOOGLE_API_KEY", "env-key")
+    _build_chat_model("gemini-model", AppConfig(model="another"))
+    assert captured["google_api_key"] == "aaa"
 
 
 def test_build_deep_agent_prefers_kwargs_signature(monkeypatch: pytest.MonkeyPatch) -> None:
