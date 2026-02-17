@@ -1,92 +1,181 @@
+"""Simplified deep-agent scaffold for markdown-only governance templates."""
+
+from __future__ import annotations
+
 import os
-from typing import Any, Dict, List
-from langchain_openai import ChatOpenAI  # Or your preferred LLM provider
+import re
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
 from deepagents import create_deep_agent
 from deepagents.backends import FilesystemBackend
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.memory import MemorySaver
-from jinja2 import Environment, FileSystemLoader  # For template rendering if using Jinja
 
-# Custom Tool: Execute Tests (safe, sandboxed code exec)
-# Note: For real exec, integrate a sandbox like Modal or subprocess with isolation.
-# Here, simulate with subprocess for pytest/unittest; harden for prod.
-import subprocess
-def execute_tests(test_paths: List[str]) -> Dict[str, Any]:
-    """Run tests at given paths (e.g., ['tests/test_model.py']) and return results."""
-    results = {}
-    for path in test_paths:
+from mrm_deepagent.marker_utils import parse_heading_marker
+from mrm_deepagent.models import SectionType
+
+_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.MULTILINE)
+_SECTION_CONTENT_TOKEN = "[[SECTION_CONTENT]]"
+
+
+@dataclass(frozen=True)
+class MarkedSection:
+    """Template section with body boundaries in the source markdown."""
+
+    section_type: SectionType
+    section_id: str
+    title: str
+    body_start: int
+    body_end: int
+
+
+def execute_tests(test_paths: list[str], timeout_s: int = 300) -> dict[str, Any]:
+    """Run pytest for each path and return stdout/stderr payloads."""
+    targets = test_paths or ["tests"]
+    results: dict[str, Any] = {}
+    for target in targets:
         try:
-            output = subprocess.run(["pytest", path], capture_output=True, text=True, timeout=300)
-            results[path] = {
-                "success": output.returncode == 0,
-                "stdout": output.stdout,
-                "stderr": output.stderr
+            completed = subprocess.run(
+                ["pytest", target],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=timeout_s,
+            )
+            results[target] = {
+                "success": completed.returncode == 0,
+                "returncode": completed.returncode,
+                "stdout": completed.stdout,
+                "stderr": completed.stderr,
             }
-        except Exception as e:
-            results[path] = {"error": str(e)}
+        except Exception as exc:  # noqa: BLE001 - tool must return structured errors
+            results[target] = {"success": False, "error": str(exc)}
     return results
 
-# Custom Tool: Fill Template
-# Assumes templates are Jinja2 files with placeholders like {{ model_name }}, {{ accuracy }}.
-def fill_template(template_path: str, data: Dict[str, Any], output_path: str) -> str:
-    """Render a Jinja template with data and write to output_path."""
-    env = Environment(loader=FileSystemLoader(os.path.dirname(template_path)))
-    template = env.get_template(os.path.basename(template_path))
-    rendered = template.render(data)
-    with open(output_path, "w") as f:
-        f.write(rendered)
-    return f"Template filled and saved to {output_path}"
 
-# System Prompt (core framing: instructs step-by-step reasoning)
-system_prompt = """You are a Documentation Generator Agent for ML models.
-Task: Given model doc templates, scan the code base, README, results dirs, execute tests, then fill templates accurately.
+def list_fill_sections(template_path: str) -> list[str]:
+    """Return fillable section IDs in a markdown template."""
+    text = Path(template_path).read_text(encoding="utf-8")
+    sections = _parse_marked_sections(text)
+    return [section.section_id for section in sections if section.section_type == SectionType.FILL]
 
-Always:
-1. Plan with write_todos: Scan code/README/results → Analyze key details (model arch, params, metrics) → Run tests → Synthesize findings → Fill templates.
-2. Use filesystem tools to read code/files (e.g., grep for model defs, read results.json).
-3. Execute tests only if relevant (e.g., to verify metrics); capture outputs.
-4. Extract facts: Model name, architecture, training data, eval metrics, usage examples.
-5. Fill templates with precise, factual data; write outputs to /docs/filled_{template_name}.
-6. If info missing/inconsistent, note assumptions or gaps.
-7. Delegate to sub-agents for complex parts (e.g., test-runner for isolation).
 
-Templates provided: {template_paths}  # Inject paths here."""
+def fill_markdown_template(
+    template_path: str,
+    section_content: dict[str, str],
+    output_path: str,
+) -> str:
+    """Replace [[SECTION_CONTENT]] in fill sections and write output markdown."""
+    template_text = Path(template_path).read_text(encoding="utf-8")
+    sections = _parse_marked_sections(template_text)
+    replacements: list[tuple[int, int, str]] = []
+    applied_ids: list[str] = []
 
-# Sub-Agent: Test Runner (isolated for exec-heavy tasks)
-test_runner_subagent = {
-    "name": "test-runner",
-    "description": "Executes and analyzes tests",
-    "system_prompt": "You run tests and parse results for metrics/errors. Output structured JSON.",
-    "tools": [execute_tests]
-}
+    for section in sections:
+        if section.section_type != SectionType.FILL:
+            continue
+        content = section_content.get(section.section_id)
+        if content is None:
+            continue
+        body = template_text[section.body_start : section.body_end]
+        if _SECTION_CONTENT_TOKEN not in body:
+            raise ValueError(
+                f"Section '{section.section_id}' is missing required token "
+                f"{_SECTION_CONTENT_TOKEN}."
+            )
+        replacements.append(
+            (
+                section.body_start,
+                section.body_end,
+                body.replace(_SECTION_CONTENT_TOKEN, str(content), 1),
+            )
+        )
+        applied_ids.append(section.section_id)
 
-# Create the Agent
-def create_doc_gen_agent(template_paths: List[str]) -> Any:
-    formatted_prompt = system_prompt.format(template_paths=", ".join(template_paths))
-    
-    checkpointer = MemorySaver()  # For persistence across runs
-    
-    agent = create_deep_agent(
-        model=ChatOpenAI(model="gpt-4o", temperature=0.1),  # Low temp for accuracy
-        tools=[execute_tests, fill_template],  # Customs + built-ins auto-added
-        system_prompt=formatted_prompt,
-        subagents=[test_runner_subagent],
-        backend=FilesystemBackend(root_dir=".", virtual_mode=False),  # Real FS access
-        memory=["ANALYSIS_NOTES.md", "MODEL_INSIGHTS.md"],  # Persistent summaries
-        checkpointer=checkpointer,
-        interrupt_on={"execute_tests": True, "write_file": True},  # HITL for safety
-        debug=True
+    rendered = template_text
+    for start, end, replacement in sorted(replacements, reverse=True):
+        rendered = f"{rendered[:start]}{replacement}{rendered[end:]}"
+
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(rendered, encoding="utf-8")
+    filled = ", ".join(applied_ids) if applied_ids else "<none>"
+    return f"Template filled and saved to {output_path}. Filled sections: {filled}"
+
+
+def create_doc_gen_agent(
+    template_paths: list[str],
+    model_name: str = "gemini-3-flash-preview",
+    *,
+    api_key: str | None = None,
+    root_dir: str = ".",
+) -> Any:
+    """Create a markdown-only deep agent with Gemini API key auth."""
+    if not template_paths:
+        raise ValueError("At least one markdown template path is required.")
+    if any(Path(path).suffix.lower() not in {".md", ".markdown"} for path in template_paths):
+        raise ValueError("Only markdown templates are supported in this simplified agent.")
+
+    key = api_key or os.environ.get("GOOGLE_API_KEY")
+    if not key:
+        raise ValueError("GOOGLE_API_KEY is required.")
+
+    system_prompt = _build_system_prompt(template_paths)
+    model = ChatGoogleGenerativeAI(model=model_name, google_api_key=key, temperature=0.1)
+    tools = [execute_tests, list_fill_sections, fill_markdown_template]
+
+    return create_deep_agent(
+        model=model,
+        tools=tools,
+        system_prompt=system_prompt,
+        backend=FilesystemBackend(root_dir=root_dir, virtual_mode=False),
+        memory=["ANALYSIS_NOTES.md", "MODEL_INSIGHTS.md"],
+        checkpointer=MemorySaver(),
+        interrupt_on={"execute_tests": True, "fill_markdown_template": True},
     )
-    return agent
 
-# Usage Example
-if __name__ == "__main__":
-    templates = ["templates/model_doc_template.md", "templates/api_ref_template.md"]  # Your templates
-    agent = create_doc_gen_agent(templates)
-    
-    # Interactive run (or invoke one-shot)
-    inputs = {"messages": [{"role": "user", "content": "Generate docs for my ML model codebase."}]}
-    for event in agent.astream_events(inputs, version="v2", subgraphs=True):
-        # Handle streaming/output (as in prior examples)
-        pass
-    
-    # Final output: Check /docs/ for filled templates
+
+def _build_system_prompt(template_paths: list[str]) -> str:
+    template_list = ", ".join(template_paths)
+    return (
+        "You are a Documentation Generator Agent for ML governance markdown templates.\n"
+        "You must only work with markdown templates using heading markers like "
+        "[FILL][ID:section_id] Title.\n\n"
+        "Always follow this sequence:\n"
+        "1. Scan the repository and README for factual evidence.\n"
+        "2. Run tests only when needed to verify behavior or metrics.\n"
+        "3. Extract concrete facts with file references.\n"
+        "4. Fill markdown sections by replacing [[SECTION_CONTENT]] with factual text.\n"
+        "5. If evidence is missing, write explicit missing-information questions.\n\n"
+        f"Templates provided: {template_list}"
+    )
+
+
+def _parse_marked_sections(text: str) -> list[MarkedSection]:
+    matches = list(_HEADING_RE.finditer(text))
+    sections: list[MarkedSection] = []
+    used_ids: set[str] = set()
+    for idx, match in enumerate(matches):
+        parsed_marker = parse_heading_marker(
+            match.group(2).strip(),
+            fallback_fill=False,
+            used_ids=used_ids,
+        )
+        if parsed_marker is None:
+            continue
+        section_type, section_id, title = parsed_marker
+        body_start = match.end()
+        body_end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
+        sections.append(
+            MarkedSection(
+                section_type=section_type,
+                section_id=section_id,
+                title=title,
+                body_start=body_start,
+                body_end=body_end,
+            )
+        )
+    return sections
