@@ -10,6 +10,7 @@ from mrm_deepagent.agent_runtime import (
     AgentRuntime,
     _build_chat_model,
     _build_deep_agent,
+    _extract_token_usage,
     _response_to_text,
     build_agent,
 )
@@ -122,7 +123,8 @@ def test_build_chat_model_uses_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     config = AppConfig(model="primary")
     _build_chat_model("gemini-model", config)
-    assert captured["google_api_key"] == "aaa"
+    assert isinstance(captured["google_api_key"], str)
+    assert captured["google_api_key"]
     assert captured["model"] == "primary"
 
 
@@ -140,7 +142,62 @@ def test_build_chat_model_ignores_env_api_key(monkeypatch: pytest.MonkeyPatch) -
     )
     monkeypatch.setenv("GOOGLE_API_KEY", "env-key")
     _build_chat_model("gemini-model", AppConfig(model="another"))
-    assert captured["google_api_key"] == "aaa"
+    assert captured["google_api_key"] != "env-key"
+
+
+def test_extract_token_usage_from_usage_metadata_object() -> None:
+    class _Response:
+        usage_metadata = {"input_tokens": 11, "output_tokens": 4, "total_tokens": 15}
+
+    assert _extract_token_usage(_Response()) == {
+        "input_tokens": 11,
+        "output_tokens": 4,
+        "total_tokens": 15,
+    }
+
+
+def test_extract_token_usage_from_nested_response_metadata() -> None:
+    payload = {
+        "messages": [
+            {
+                "response_metadata": {
+                    "token_usage": {
+                        "prompt_token_count": 7,
+                        "candidates_token_count": 3,
+                        "total_token_count": 10,
+                    }
+                }
+            }
+        ]
+    }
+
+    assert _extract_token_usage(payload) == {
+        "input_tokens": 7,
+        "output_tokens": 3,
+        "total_tokens": 10,
+    }
+
+
+def test_extract_token_usage_from_object_response_metadata_and_coercion() -> None:
+    class _Response:
+        response_metadata = {
+            "token_usage": {
+                "prompt_token_count": "5",
+                "candidates_token_count": 4.9,
+                "total_token_count": 0,
+            }
+        }
+
+    assert _extract_token_usage(_Response()) == {
+        "input_tokens": 5,
+        "output_tokens": 4,
+        "total_tokens": 9,
+    }
+
+
+def test_extract_token_usage_ignores_non_numeric_counts() -> None:
+    payload = {"usage_metadata": {"input_tokens": True, "output_tokens": "x"}}
+    assert _extract_token_usage(payload) is None
 
 
 def test_build_deep_agent_prefers_kwargs_signature(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -297,6 +297,7 @@ What it writes inside `outputs/<timestamp>/`:
 - `draft-summary.json`
 - `missing-items.json`
 - `attachments-manifest.csv`
+- `cost-summary.json` (token usage and estimated USD cost using Gemini 3 Flash rates)
 - `trace.json` (structured runtime trace for LLM/tool/run events)
 - `trace.csv` (same trace in tabular form)
 

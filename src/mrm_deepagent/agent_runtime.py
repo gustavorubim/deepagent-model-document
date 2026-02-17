@@ -132,11 +132,13 @@ class AgentRuntime:
                     payload_format=self._payload_format,
                 )
                 result = self._agent.invoke(payload)
+                usage = _extract_token_usage(result)
                 self._trace_event(
                     action="payload_attempt",
                     status="ok",
                     section_id=section_id,
                     payload_format=self._payload_format,
+                    details=usage,
                 )
                 return _response_to_text(result)
 
@@ -151,6 +153,7 @@ class AgentRuntime:
                         payload_format=label,
                     )
                     result = self._agent.invoke(payload)
+                    usage = _extract_token_usage(result)
                     text = _response_to_text(result)
                     self._payload_format = label
                     self._log(f"{context_label}: locked payload format to {label}.")
@@ -159,6 +162,7 @@ class AgentRuntime:
                         status="ok",
                         section_id=section_id,
                         payload_format=label,
+                        details=usage,
                     )
                     return text
                 except Exception as exc:  # noqa: BLE001 - trying alternate payload shapes
@@ -262,7 +266,7 @@ def _build_chat_model(
     logger(f"Constructing chat model '{config.model}'.")
     return ChatGoogleGenerativeAI(
         model=config.model,
-        google_api_key="aaa",
+        google_api_key="AIzaSyDxja9kAnDW7YbHjzhu-Ktol-jkkSHZuU8",
     )
 
 
@@ -321,3 +325,93 @@ def _section_id_from_label(context_label: str | None) -> str | None:
     if context_label.startswith("section:"):
         return context_label.split(":", maxsplit=1)[1] or None
     return None
+
+
+def _extract_token_usage(response: Any) -> dict[str, int] | None:
+    usage_entries: list[dict[str, int]] = []
+    _collect_usage_entries(response, usage_entries)
+    if not usage_entries:
+        return None
+    input_tokens = sum(entry.get("input_tokens", 0) for entry in usage_entries)
+    output_tokens = sum(entry.get("output_tokens", 0) for entry in usage_entries)
+    total_tokens = sum(entry.get("total_tokens", 0) for entry in usage_entries)
+    if total_tokens == 0:
+        total_tokens = input_tokens + output_tokens
+    if input_tokens == 0 and output_tokens == 0 and total_tokens == 0:
+        return None
+    return {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+    }
+
+
+def _collect_usage_entries(value: Any, entries: list[dict[str, int]]) -> None:
+    usage = _parse_usage_dict(value)
+    if usage is not None:
+        entries.append(usage)
+
+    if isinstance(value, dict):
+        for nested in value.values():
+            if isinstance(nested, (dict, list, tuple)):
+                _collect_usage_entries(nested, entries)
+        return
+
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            _collect_usage_entries(item, entries)
+        return
+
+    usage_metadata = getattr(value, "usage_metadata", None)
+    usage = _parse_usage_dict(usage_metadata)
+    if usage is not None:
+        entries.append(usage)
+
+    response_metadata = getattr(value, "response_metadata", None)
+    if isinstance(response_metadata, dict):
+        usage = _parse_usage_dict(response_metadata.get("token_usage"))
+        if usage is not None:
+            entries.append(usage)
+
+
+def _parse_usage_dict(value: Any) -> dict[str, int] | None:
+    if not isinstance(value, dict):
+        return None
+    input_tokens = _coerce_token_count(
+        value.get("input_tokens"),
+        value.get("prompt_tokens"),
+        value.get("prompt_token_count"),
+    )
+    output_tokens = _coerce_token_count(
+        value.get("output_tokens"),
+        value.get("completion_tokens"),
+        value.get("candidates_token_count"),
+    )
+    total_tokens = _coerce_token_count(
+        value.get("total_tokens"),
+        value.get("total_token_count"),
+    )
+    if total_tokens == 0:
+        total_tokens = input_tokens + output_tokens
+    if input_tokens == 0 and output_tokens == 0 and total_tokens == 0:
+        return None
+    return {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+    }
+
+
+def _coerce_token_count(*values: Any) -> int:
+    for value in values:
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, int):
+            return max(value, 0)
+        if isinstance(value, float):
+            return max(int(value), 0)
+        if isinstance(value, str):
+            raw = value.strip()
+            if raw.isdigit():
+                return int(raw)
+    return 0

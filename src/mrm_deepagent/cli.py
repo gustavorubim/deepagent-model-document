@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime
 from pathlib import Path
@@ -35,6 +36,8 @@ from mrm_deepagent.tracing import RunTraceCollector
 
 app = typer.Typer(help="Deep agent for governance document drafting and application.")
 console = Console()
+_GEMINI_3_FLASH_INPUT_RATE_PER_1M_USD = 0.50
+_GEMINI_3_FLASH_OUTPUT_RATE_PER_1M_USD = 3.00
 
 
 def _vprint(enabled: bool, message: str) -> None:
@@ -79,6 +82,93 @@ def _truncate_details(text: str, max_len: int = 240) -> str:
     if len(value) <= max_len:
         return value
     return f"{value[: max_len - 3]}..."
+
+
+def _write_cost_summary(run_dir: Path, trace: RunTraceCollector, model_name: str) -> dict[str, Any]:
+    summary = _estimate_cost_from_events(trace.events(), model_name)
+    path = run_dir / "cost-summary.json"
+    path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return summary
+
+
+def _estimate_cost_from_events(events: list[dict[str, Any]], model_name: str) -> dict[str, Any]:
+    input_tokens = 0
+    output_tokens = 0
+    total_tokens = 0
+    usage_event_count = 0
+
+    for event in events:
+        if event.get("event_type") != "llm_call":
+            continue
+        if event.get("action") != "payload_attempt":
+            continue
+        if event.get("status") != "ok":
+            continue
+        details = _parse_trace_details(event.get("details", ""))
+        if not isinstance(details, dict):
+            continue
+        input_value = _coerce_int(details.get("input_tokens"))
+        output_value = _coerce_int(details.get("output_tokens"))
+        total_value = _coerce_int(details.get("total_tokens"))
+        if total_value == 0:
+            total_value = input_value + output_value
+        if input_value == 0 and output_value == 0 and total_value == 0:
+            continue
+        input_tokens += input_value
+        output_tokens += output_value
+        total_tokens += total_value
+        usage_event_count += 1
+
+    input_cost = (input_tokens / 1_000_000) * _GEMINI_3_FLASH_INPUT_RATE_PER_1M_USD
+    output_cost = (output_tokens / 1_000_000) * _GEMINI_3_FLASH_OUTPUT_RATE_PER_1M_USD
+    total_cost = input_cost + output_cost
+
+    return {
+        "model_name": model_name,
+        "pricing_model": "gemini-3-flash-preview",
+        "pricing_units": "USD per 1M tokens",
+        "input_rate_per_1m_tokens_usd": _GEMINI_3_FLASH_INPUT_RATE_PER_1M_USD,
+        "output_rate_per_1m_tokens_usd": _GEMINI_3_FLASH_OUTPUT_RATE_PER_1M_USD,
+        "llm_usage_event_count": usage_event_count,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+        "input_cost_usd": round(input_cost, 8),
+        "output_cost_usd": round(output_cost, 8),
+        "total_cost_usd": round(total_cost, 8),
+    }
+
+
+def _parse_trace_details(raw: Any) -> dict[str, Any] | str | None:
+    if isinstance(raw, dict):
+        return raw
+    if not isinstance(raw, str):
+        return None
+    text = raw.strip()
+    if not text:
+        return None
+    if text.startswith("{") and text.endswith("}"):
+        try:
+            loaded = json.loads(text)
+        except json.JSONDecodeError:
+            return text
+        if isinstance(loaded, dict):
+            return loaded
+    return text
+
+
+def _coerce_int(value: Any) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return max(value, 0)
+    if isinstance(value, float):
+        return max(int(value), 0)
+    if isinstance(value, str):
+        raw = value.strip()
+        if raw.isdigit():
+            return int(raw)
+    return 0
 
 
 @app.command("validate-template")
@@ -292,12 +382,19 @@ def draft_cmd(
     )
     trace_json = run_dir / "trace.json"
     trace_csv = run_dir / "trace.csv"
+    cost_summary = _write_cost_summary(run_dir, trace, runtime_config.model)
     trace.write_json(trace_json)
     trace.write_csv(trace_csv)
     _vprint(verbose, f"Trace artifacts written: {trace_json}, {trace_csv}")
+    _vprint(verbose, f"Cost summary written: {run_dir / 'cost-summary.json'}")
 
     console.print(f"[green]Draft generated.[/green] {run_dir / 'draft.md'}")
     console.print(f"[green]Context updated.[/green] {context_path}")
+    console.print(
+        "[green]Estimated LLM cost.[/green] "
+        f"${cost_summary['total_cost_usd']:.6f} "
+        f"(in={cost_summary['input_tokens']}, out={cost_summary['output_tokens']})"
+    )
 
 
 @app.command("apply")
