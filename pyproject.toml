@@ -12,7 +12,6 @@ dependencies = [
   "deepagents>=0.0.10",
   "langchain>=0.3.0",
   "langchain-google-genai>=2.1.0",
-  "google-genai>=1.0.0",
   "google-auth>=2.48.0",
   "requests>=2.32.0",
   "python-docx>=1.1.2",
@@ -48,3 +47,4 @@ select = ["E", "F", "I", "N", "W", "UP"]
 testpaths = ["tests"]
 addopts = "--cov=src/mrm_deepagent --cov-report=term-missing --cov-fail-under=90"
 markers = ["live: marks tests requiring live Gemini API access"]
+pythonpath = ["src"]

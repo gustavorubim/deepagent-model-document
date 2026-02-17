@@ -6,12 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from mrm_deepagent.auth import (
-    H2MTokenCredentials,
-    M2MTokenCredentials,
-    apply_network_settings,
-    call_h2m_token,
-)
+from mrm_deepagent.auth import H2MTokenCredentials, apply_network_settings
 from mrm_deepagent.models import AppConfig
 
 
@@ -19,7 +14,7 @@ def test_apply_network_settings_sets_proxy_and_cert(monkeypatch, tmp_path: Path)
     cert_file = tmp_path / "corp.pem"
     cert_file.write_text("dummy", encoding="utf-8")
     config = AppConfig(
-        google_api_key="x",
+        google_project="proj",
         https_proxy="https://proxy.example:8443",
         ssl_cert_file=str(cert_file),
     )
@@ -35,51 +30,10 @@ def test_apply_network_settings_sets_proxy_and_cert(monkeypatch, tmp_path: Path)
     monkeypatch.delenv("REQUESTS_CA_BUNDLE", raising=False)
 
 
-def test_m2m_token_credentials_refresh(monkeypatch) -> None:
-    called = {"count": 0}
-
-    class _Response:
-        def raise_for_status(self) -> None:
-            return None
-
-        def json(self) -> dict[str, object]:
-            return {"access_token": "abc123", "expires_in": 120}
-
-    def _fake_post(*args, **kwargs):  # noqa: ANN002, ANN003
-        called["count"] += 1
-        assert kwargs["data"]["grant_type"] == "client_credentials"
-        return _Response()
-
-    monkeypatch.setattr("mrm_deepagent.auth.requests.post", _fake_post)
-
-    creds = M2MTokenCredentials(
-        token_url="https://auth/token",
-        client_id="cid",
-        client_secret="secret",
-        scope="scope1",
-        audience=None,
-        grant_type="client_credentials",
-        token_field="access_token",
-        expires_in_field="expires_in",
-        auth_style="body",
-        timeout_s=10,
-        https_proxy=None,
-        ssl_cert_file=None,
-    )
-    creds.refresh(None)
-    assert creds.token == "abc123"
-    assert creds.valid
-    assert called["count"] == 1
-
-    creds.expiry = datetime.now(UTC) + timedelta(minutes=5)
-    creds.refresh(None)
-    assert called["count"] == 1
-
-
 def test_h2m_token_credentials_refresh_from_dict(monkeypatch: pytest.MonkeyPatch) -> None:
     called = {"count": 0}
 
-    def _fake_call_h2m_token(**kwargs) -> dict[str, object]:  # noqa: ANN003
+    def _fake_call_h2m_token() -> dict[str, object]:
         called["count"] += 1
         return {"access_token": "h2m-token", "expires_in": 120}
 
@@ -93,36 +47,3 @@ def test_h2m_token_credentials_refresh_from_dict(monkeypatch: pytest.MonkeyPatch
     creds.expiry = datetime.now(UTC) + timedelta(minutes=5)
     creds.refresh(None)
     assert called["count"] == 1
-
-
-def test_call_h2m_token_runs_shell_command(monkeypatch: pytest.MonkeyPatch) -> None:
-    """call_h2m_token executes the supplied command and returns stripped stdout."""
-
-    def _fake_check_output(cmd, *, shell):  # noqa: ANN001, ANN202
-        assert shell is True
-        assert cmd == "echo my-token-123"
-        return b"  my-token-123\n"
-
-    monkeypatch.setattr("mrm_deepagent.auth.subprocess.check_output", _fake_check_output)
-    token = call_h2m_token(cmd="echo my-token-123")
-    assert token == "my-token-123"
-
-
-def test_call_h2m_token_raises_without_cmd() -> None:
-    """call_h2m_token raises NotImplementedError when no command is given."""
-    with pytest.raises(NotImplementedError):
-        call_h2m_token()
-
-
-def test_h2m_token_credentials_with_cmd(monkeypatch: pytest.MonkeyPatch) -> None:
-    """H2MTokenCredentials passes token_cmd through to call_h2m_token."""
-
-    def _fake_check_output(cmd, *, shell):  # noqa: ANN001, ANN202
-        assert cmd == "helix auth access-token print -a"
-        return b"helix-tok\n"
-
-    monkeypatch.setattr("mrm_deepagent.auth.subprocess.check_output", _fake_check_output)
-    creds = H2MTokenCredentials(default_ttl_s=600, token_cmd="helix auth access-token print -a")
-    creds.refresh(None)
-    assert creds.token == "helix-tok"
-    assert creds.valid

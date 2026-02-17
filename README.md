@@ -88,10 +88,9 @@ graph TD
 
 - Python `3.11`
 - `uv` installed (optional if you prefer classic `venv` + `pip`)
-- Gemini auth configured for `draft`:
-  - API mode (`GOOGLE_API_KEY`) or
-  - M2M mode (`MRM_AUTH_MODE=m2m`) with Vertex AI settings or
-  - H2M mode (`MRM_AUTH_MODE=h2m`) with Vertex AI settings
+- Gemini H2M auth configured for `draft`:
+  - `google_project` configured via `mrm_agent.yaml` or CLI
+  - local `call_h2m_token()` implementation in `src/mrm_deepagent/auth.py`
 
 ## Environment setup
 
@@ -174,59 +173,19 @@ python -m ruff --version
 python -m pytest --version
 ```
 
-## Authentication setup (`.env`)
+## Authentication setup (H2M)
 
-`load_config()` reads `.env` automatically. Copy template first:
+Configure runtime values in `mrm_agent.yaml` (or pass CLI overrides):
 
-```bash
-cp .env.example .env
+```yaml
+google_project: your-gcp-project-id
+google_location: us-central1
+base_url:
+additional_headers: {}
+h2m_token_ttl: 3600
 ```
 
-PowerShell:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-### Option A: API key mode
-
-```env
-MRM_AUTH_MODE=api
-GOOGLE_API_KEY=your_api_key_here
-GOOGLE_VERTEXAI=false
-```
-
-### Option B: M2M mode (enterprise)
-
-```env
-MRM_AUTH_MODE=m2m
-GOOGLE_VERTEXAI=true
-GOOGLE_PROJECT=your-gcp-project-id
-GOOGLE_LOCATION=us-central1
-
-M2M_TOKEN_URL=https://auth.example.corp/oauth2/token
-M2M_CLIENT_ID=your_client_id
-M2M_CLIENT_SECRET=your_client_secret
-M2M_SCOPE=https://www.googleapis.com/auth/cloud-platform
-M2M_AUDIENCE=
-M2M_GRANT_TYPE=client_credentials
-M2M_TOKEN_FIELD=access_token
-M2M_EXPIRES_IN_FIELD=expires_in
-M2M_AUTH_STYLE=body
-M2M_TOKEN_TIMEOUT=30
-```
-
-### Option C: H2M mode (enterprise)
-
-```env
-MRM_AUTH_MODE=h2m
-GOOGLE_VERTEXAI=true
-GOOGLE_PROJECT=your-gcp-project-id
-GOOGLE_LOCATION=us-central1
-H2M_TOKEN_TTL=3600
-```
-
-H2M mode uses a local token hook function `call_h2m_token()` from `src/mrm_deepagent/auth.py`.
+H2M token retrieval uses local hook `call_h2m_token()` in `src/mrm_deepagent/auth.py`.
 
 ### Proxy and PEM (optional)
 
@@ -235,20 +194,18 @@ HTTPS_PROXY=https://proxy.example.corp:8443
 SSL_CERT_FILE=C:/certs/corp-ca-bundle.pem
 ```
 
-The runtime applies these for Gemini calls and M2M/H2M token refresh.
+The runtime applies these for Gemini calls and H2M token usage.
 
 Precedence order is:
 
 1. CLI arguments
-2. Shell environment variables
-3. `.env` file
-4. `mrm_agent.yaml`
+2. `mrm_agent.yaml`
 
 ## Quick run
 
 ```bash
 uv run mrm-agent validate-template --template examples/fictitious_mrm_template.docx
-uv run mrm-agent draft --codebase examples/regression_model --template examples/fictitious_mrm_template.docx
+uv run mrm-agent draft --codebase examples/regression_model --template examples/fictitious_mrm_template.docx --google-project your-gcp-project-id
 # Review/edit outputs/<run_id>/draft.md and additional-context.md
 uv run mrm-agent apply --draft outputs/<run_id>/draft.md --template examples/fictitious_mrm_template.docx
 ```
@@ -257,7 +214,7 @@ Markdown governance template example:
 
 ```bash
 uv run mrm-agent validate-template --template examples/fictitious_governance_template.md
-uv run mrm-agent draft --codebase examples/regression_model --template examples/fictitious_governance_template.md
+uv run mrm-agent draft --codebase examples/regression_model --template examples/fictitious_governance_template.md --google-project your-gcp-project-id
 uv run mrm-agent apply --draft outputs/<run_id>/draft.md --template examples/fictitious_governance_template.md
 ```
 
@@ -265,7 +222,7 @@ Classic `venv` + `pip` equivalent:
 
 ```bash
 python -m mrm_deepagent.cli validate-template --template examples/fictitious_mrm_template.docx
-python -m mrm_deepagent.cli draft --codebase examples/regression_model --template examples/fictitious_mrm_template.docx
+python -m mrm_deepagent.cli draft --codebase examples/regression_model --template examples/fictitious_mrm_template.docx --google-project your-gcp-project-id
 # Review/edit outputs/<run_id>/draft.md and additional-context.md
 python -m mrm_deepagent.cli apply --draft outputs/<run_id>/draft.md --template examples/fictitious_mrm_template.docx
 ```
@@ -305,7 +262,7 @@ uv run mrm-agent draft `
   --output-root outputs `
   --context-file additional-context.md `
   --model gemini-3-flash-preview `
-  --auth-mode api `
+  --google-project your-gcp-project-id `
   --section-retries 3 `
   --section-timeout-s 90
 ```
@@ -319,21 +276,15 @@ uv run mrm-agent draft \
   --output-root outputs \
   --context-file additional-context.md \
   --model gemini-3-flash-preview \
-  --auth-mode api \
+  --google-project your-gcp-project-id \
   --section-retries 3 \
   --section-timeout-s 90
 ```
 
-M2M example:
+Custom endpoint and headers example:
 
 ```bash
-uv run mrm-agent draft ... --auth-mode m2m --vertexai --google-project your-gcp-project-id
-```
-
-H2M example:
-
-```bash
-uv run mrm-agent draft ... --auth-mode h2m --vertexai --google-project your-gcp-project-id
+uv run mrm-agent draft ... --google-project your-gcp-project-id --base-url https://vertex.example --additional-header "x-tenant: acme"
 ```
 
 Custom context file location example:
@@ -494,22 +445,12 @@ Main fields:
 
 - `model`
 - `fallback_model`
-- `auth_mode` (`api`, `m2m`, or `h2m`)
-- `vertexai`
 - `google_project`
 - `google_location`
+- `base_url`
+- `additional_headers`
 - `https_proxy`
 - `ssl_cert_file`
-- `m2m_token_url`
-- `m2m_client_id`
-- `m2m_client_secret`
-- `m2m_scope`
-- `m2m_audience`
-- `m2m_grant_type`
-- `m2m_token_field`
-- `m2m_expires_in_field`
-- `m2m_auth_style`
-- `m2m_token_timeout`
 - `h2m_token_ttl`
 - `temperature`
 - `max_section_tokens`
@@ -534,7 +475,7 @@ uv run python examples/build_fictitious_mrm_template.py
 
 - `0` success
 - `2` invalid template markers/schema
-- `3` missing required runtime config (for example `GOOGLE_API_KEY`)
+- `3` missing required runtime config (for example `google_project`)
 - `4` invalid/unparseable draft markdown
 - `5` unsupported/unsafe apply operation
 

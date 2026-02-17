@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Any
 
-from mrm_deepagent.auth import apply_network_settings, build_h2m_credentials, build_m2m_credentials
+from mrm_deepagent.auth import apply_network_settings, build_h2m_credentials
 from mrm_deepagent.models import AppConfig
 from mrm_deepagent.prompts import SYSTEM_PROMPT
 from mrm_deepagent.tracing import RunTraceCollector
@@ -226,7 +226,7 @@ def build_agent(
     logger = log or (lambda _message: None)
     logger(
         "Initializing Gemini runtime "
-        f"(auth_mode={config.auth_mode.value}, vertexai={config.vertexai})."
+        f"(vertexai=True, project={config.google_project}, location={config.google_location})."
     )
     if trace is not None:
         trace.log(
@@ -275,69 +275,18 @@ def _build_chat_model(
         return ChatGoogleGenerativeAI(model=config.fallback_model, **common_kwargs)
 
 
-def _build_genai_client(config: AppConfig) -> Any | None:
-    """Build a ``genai.Client`` with custom ``HttpOptions`` when needed.
-
-    Returns ``None`` when no custom base URL or headers are configured,
-    letting ``ChatGoogleGenerativeAI`` create its own default client.
-    """
-    if not config.vertex_base_url and not config.vertex_headers:
-        return None
-
-    from google import genai
-    from google.genai import types as genai_types
-
-    http_opts = genai_types.HttpOptions(
-        base_url=config.vertex_base_url or None,
-        headers=config.vertex_headers or None,
-    )
-    client_kwargs: dict[str, Any] = {
-        "http_options": http_opts,
+def _chat_model_kwargs(config: AppConfig) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {
+        "temperature": config.temperature,
         "vertexai": True,
         "project": config.google_project,
         "location": config.google_location,
+        "credentials": build_h2m_credentials(config),
     }
-    if config.auth_mode.value == "m2m":
-        client_kwargs["credentials"] = build_m2m_credentials(config)
-    elif config.auth_mode.value == "h2m":
-        client_kwargs["credentials"] = build_h2m_credentials(config)
-
-    return genai.Client(**client_kwargs)
-
-
-def _chat_model_kwargs(config: AppConfig) -> dict[str, Any]:
-    kwargs: dict[str, Any] = {"temperature": config.temperature}
-
-    # When a custom base URL or headers are set, build a full genai.Client
-    # so that HttpOptions (base_url, headers) are honoured.
-    custom_client = _build_genai_client(config)
-    if custom_client is not None:
-        kwargs["client"] = custom_client
-        # client already carries vertexai/project/location/credentials
-        return kwargs
-
-    if config.auth_mode.value == "m2m":
-        kwargs["credentials"] = build_m2m_credentials(config)
-        kwargs["vertexai"] = True
-        kwargs["project"] = config.google_project
-        kwargs["location"] = config.google_location
-        return kwargs
-
-    if config.auth_mode.value == "h2m":
-        kwargs["credentials"] = build_h2m_credentials(config)
-        kwargs["vertexai"] = True
-        kwargs["project"] = config.google_project
-        kwargs["location"] = config.google_location
-        return kwargs
-
-    if config.google_api_key:
-        kwargs["google_api_key"] = config.google_api_key
-
-    if config.vertexai:
-        kwargs["vertexai"] = True
-        kwargs["project"] = config.google_project
-        kwargs["location"] = config.google_location
-
+    if config.base_url:
+        kwargs["base_url"] = config.base_url
+    if config.additional_headers:
+        kwargs["additional_headers"] = config.additional_headers
     return kwargs
 
 

@@ -7,7 +7,7 @@ Guidance for agents working in this repository.
 Build and maintain a CLI-first deep agent that:
 
 1. Reads a codebase and a governance template (`.docx` or `.md`).
-2. Uses LangChain `deepagents` with Gemini (Google AI Studio API).
+2. Uses LangChain `deepagents` with Gemini (Vertex AI + H2M auth).
 3. Produces draft documentation plus missing-context prompts.
 4. Applies reviewed draft content into a copied template.
 
@@ -18,23 +18,21 @@ Build and maintain a CLI-first deep agent that:
 - Linting: `ruff`
 - Testing: `pytest` + `pytest-cov` with `>=90%` line coverage
 - LLM provider: Gemini via `langchain-google-genai`
-  - API mode: `MRM_AUTH_MODE=api` + `GOOGLE_API_KEY`
-  - M2M mode: `MRM_AUTH_MODE=m2m` + Vertex + M2M OAuth fields
-  - H2M mode: `MRM_AUTH_MODE=h2m` + Vertex + local `call_h2m_token()` hook
+  - H2M mode only: Vertex + local `call_h2m_token()` hook
 
 ## Contracts to preserve
 
 ### CLI
 
 - `mrm-agent validate-template --template <path.docx|path.md>`
-- `mrm-agent draft --codebase <path> --template <path.docx|path.md> --output-root outputs --context-file <optional-path> --model gemini-3-flash-preview --auth-mode api|m2m|h2m`
+- `mrm-agent draft --codebase <path> --template <path.docx|path.md> --output-root outputs --context-file <optional-path> --model gemini-3-flash-preview --google-project <project-id>`
 - `mrm-agent apply --draft <draft.md> --template <path.docx|path.md> --output-root outputs`
 
 ### Exit codes
 
 - `0`: success
 - `2`: invalid template markers/schema
-- `3`: missing required runtime config (for example `GOOGLE_API_KEY`)
+- `3`: missing required runtime config (for example `google_project`)
 - `4`: invalid/unparseable draft markdown
 - `5`: unsupported/unsafe apply operation
 
@@ -80,7 +78,7 @@ user_response: <filled by user>
 2. `uv run ruff check src tests`
 3. `uv run pytest`
 
-Optional local smoke (requires `.env` with `GOOGLE_API_KEY`):
+Optional local smoke (requires H2M token hook + `google_project`):
 
 1. `uv run mrm-agent validate-template --template examples/fictitious_mrm_template.docx`
 2. `uv run mrm-agent draft --codebase examples/regression_model --template examples/fictitious_mrm_template.docx`

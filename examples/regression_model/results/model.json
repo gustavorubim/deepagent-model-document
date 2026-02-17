@@ -1,5 +1,5 @@
-﻿{
-  "intercept": 102.114,
-  "beta_income": 0.0032,
-  "beta_utilization": 1985.228
+{
+  "intercept": -494.261966,
+  "beta_income": 0.006887037,
+  "beta_utilization": 2218.19190228
 }

@@ -84,7 +84,6 @@ def test_draft_command_creates_outputs(
     outputs = tmp_path / "outputs"
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
     monkeypatch.setattr("mrm_deepagent.cli.build_agent", lambda *_args, **_kwargs: _FakeRuntime())
 
     result = runner.invoke(
@@ -99,6 +98,8 @@ def test_draft_command_creates_outputs(
             str(outputs),
             "--context-file",
             str(context_file),
+            "--google-project",
+            "proj-123",
         ],
     )
 
@@ -133,7 +134,6 @@ def test_draft_command_migrates_legacy_context_filename(
     new_context_file = tmp_path / "additional-context.md"
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
     monkeypatch.setattr("mrm_deepagent.cli.build_agent", lambda *_args, **_kwargs: _FakeRuntime())
 
     result = runner.invoke(
@@ -146,6 +146,8 @@ def test_draft_command_migrates_legacy_context_filename(
             str(template_path),
             "--context-file",
             str(new_context_file),
+            "--google-project",
+            "proj-123",
         ],
     )
     assert result.exit_code == 0
@@ -165,7 +167,6 @@ def test_draft_markdown_template_uses_default_per_template_context(
     outputs = tmp_path / "outputs"
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
     monkeypatch.setattr("mrm_deepagent.cli.build_agent", lambda *_args, **_kwargs: _FakeRuntime())
 
     result = runner.invoke(
@@ -178,6 +179,8 @@ def test_draft_markdown_template_uses_default_per_template_context(
             str(markdown_template_path),
             "--output-root",
             str(outputs),
+            "--google-project",
+            "proj-123",
         ],
     )
 
@@ -185,7 +188,7 @@ def test_draft_markdown_template_uses_default_per_template_context(
     assert (tmp_path / "contexts" / "template-additional-context.md").exists()
 
 
-def test_draft_command_requires_api_key(
+def test_draft_command_requires_h2m_project(
     tmp_path: Path,
     template_path: Path,
     monkeypatch,
@@ -193,7 +196,6 @@ def test_draft_command_requires_api_key(
     codebase = tmp_path / "repo"
     codebase.mkdir()
     (codebase / "train.py").write_text("metric = 0.91\n", encoding="utf-8")
-    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     monkeypatch.chdir(tmp_path)
 
     result = runner.invoke(
@@ -201,10 +203,10 @@ def test_draft_command_requires_api_key(
         ["draft", "--codebase", str(codebase), "--template", str(template_path)],
     )
     assert result.exit_code == 3
-    assert "GOOGLE_API_KEY" in result.stdout
+    assert "google_project" in result.stdout
 
 
-def test_draft_command_m2m_requires_m2m_settings(
+def test_draft_command_rejects_invalid_additional_header(
     tmp_path: Path,
     template_path: Path,
     monkeypatch,
@@ -213,7 +215,6 @@ def test_draft_command_m2m_requires_m2m_settings(
     codebase.mkdir()
     (codebase / "train.py").write_text("metric = 0.91\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
 
     result = runner.invoke(
         app,
@@ -223,15 +224,17 @@ def test_draft_command_m2m_requires_m2m_settings(
             str(codebase),
             "--template",
             str(template_path),
-            "--auth-mode",
-            "m2m",
+            "--google-project",
+            "proj-123",
+            "--additional-header",
+            "invalid-header-format",
         ],
     )
     assert result.exit_code == 3
-    assert "M2M auth requires" in result.stdout
+    assert "Invalid --additional-header entry" in result.stdout
 
 
-def test_draft_command_h2m_requires_h2m_settings(
+def test_draft_command_with_h2m_settings_succeeds(
     tmp_path: Path,
     template_path: Path,
     monkeypatch,
@@ -240,34 +243,6 @@ def test_draft_command_h2m_requires_h2m_settings(
     codebase.mkdir()
     (codebase / "train.py").write_text("metric = 0.91\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-
-    result = runner.invoke(
-        app,
-        [
-            "draft",
-            "--codebase",
-            str(codebase),
-            "--template",
-            str(template_path),
-            "--auth-mode",
-            "h2m",
-        ],
-    )
-    assert result.exit_code == 3
-    assert "H2M auth requires" in result.stdout
-
-
-def test_draft_command_h2m_with_vertex_and_project_succeeds(
-    tmp_path: Path,
-    template_path: Path,
-    monkeypatch,
-) -> None:
-    codebase = tmp_path / "repo"
-    codebase.mkdir()
-    (codebase / "train.py").write_text("metric = 0.91\n", encoding="utf-8")
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     monkeypatch.setattr("mrm_deepagent.cli.build_agent", lambda *_args, **_kwargs: _FakeRuntime())
 
     result = runner.invoke(
@@ -278,11 +253,12 @@ def test_draft_command_h2m_with_vertex_and_project_succeeds(
             str(codebase),
             "--template",
             str(template_path),
-            "--auth-mode",
-            "h2m",
-            "--vertexai",
             "--google-project",
             "proj-123",
+            "--base-url",
+            "https://vertex.example",
+            "--additional-header",
+            "x-tenant: acme",
         ],
     )
     assert result.exit_code == 0

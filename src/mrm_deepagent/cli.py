@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated
 
 import typer
 from rich.console import Console
@@ -88,17 +88,6 @@ def draft_cmd(
     model: Annotated[str, typer.Option(help="Gemini model name override.")] = (
         "gemini-3-flash-preview"
     ),
-    auth_mode: Annotated[
-        Literal["api", "m2m", "h2m"],
-        typer.Option(help="Authentication mode: 'api', 'm2m', or 'h2m'."),
-    ] = "api",
-    vertexai: Annotated[
-        bool | None,
-        typer.Option(
-            "--vertexai/--no-vertexai",
-            help="Enable Vertex AI mode. If omitted, uses config/.env value.",
-        ),
-    ] = None,
     google_project: Annotated[
         str | None,
         typer.Option(help="Google Cloud project ID for Vertex AI."),
@@ -106,6 +95,17 @@ def draft_cmd(
     google_location: Annotated[
         str | None,
         typer.Option(help="Google Cloud location for Vertex AI."),
+    ] = None,
+    base_url: Annotated[
+        str | None,
+        typer.Option(help="Optional Gemini endpoint base URL override."),
+    ] = None,
+    additional_header: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--additional-header",
+            help="Additional HTTP header in 'Name: Value' format. Repeat option to add multiple.",
+        ),
     ] = None,
     https_proxy: Annotated[
         str | None,
@@ -132,21 +132,22 @@ def draft_cmd(
     """Generate draft markdown from codebase and template."""
     trace = RunTraceCollector()
     try:
-        _vprint(verbose, "Loading runtime configuration (.env + YAML + CLI overrides).")
+        _vprint(verbose, "Loading runtime configuration (YAML + CLI overrides).")
+        parsed_headers = _parse_additional_headers(additional_header or [])
         runtime_config = load_config(
             config_path=config,
             overrides={
                 "model": model,
                 "output_root": output_root,
                 "context_file": context_file,
-                "auth_mode": auth_mode,
-                "vertexai": vertexai,
                 "google_project": google_project,
                 "google_location": google_location,
+                "base_url": base_url,
+                "additional_headers": parsed_headers,
                 "https_proxy": https_proxy,
                 "ssl_cert_file": ssl_cert_file,
             },
-            require_api_key=True,
+            validate_llm_config=True,
         )
     except MissingRuntimeConfigError as exc:
         console.print(f"[red]{exc}[/red]")
@@ -157,9 +158,9 @@ def draft_cmd(
         action="config_loaded",
         status="ok",
         details={
-            "auth_mode": runtime_config.auth_mode.value,
-            "vertexai": runtime_config.vertexai,
             "model": runtime_config.model,
+            "project": runtime_config.google_project,
+            "location": runtime_config.google_location,
         },
     )
 
@@ -188,11 +189,13 @@ def draft_cmd(
 
     _vprint(
         verbose,
-        "Auth settings: "
-        f"mode={runtime_config.auth_mode.value}, "
-        f"vertexai={runtime_config.vertexai}, "
+        "Gemini settings: "
+        "mode=h2m, "
+        "vertexai=true, "
         f"project={runtime_config.google_project or 'n/a'}, "
         f"location={runtime_config.google_location}, "
+        f"base_url={runtime_config.base_url or 'default'}, "
+        f"extra_headers={len(runtime_config.additional_headers)}, "
         f"proxy={'set' if runtime_config.https_proxy else 'unset'}, "
         f"cert={'set' if runtime_config.ssl_cert_file else 'unset'}.",
     )
@@ -319,7 +322,7 @@ def apply_cmd(
     runtime_config = load_config(
         config_path=config,
         overrides={"output_root": output_root},
-        require_api_key=False,
+        validate_llm_config=False,
     )
     try:
         _vprint(verbose, f"Parsing draft markdown: {draft}")
@@ -451,6 +454,24 @@ def _slugify_template_stem(stem: str) -> str:
     normalized = stem.strip().lower()
     slug = re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")
     return slug or "template"
+
+
+def _parse_additional_headers(additional_header: list[str]) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    for entry in additional_header:
+        if ":" not in entry:
+            raise MissingRuntimeConfigError(
+                "Invalid --additional-header entry. Expected 'Name: Value'."
+            )
+        name, value = entry.split(":", maxsplit=1)
+        header_name = name.strip()
+        header_value = value.strip()
+        if not header_name or not header_value:
+            raise MissingRuntimeConfigError(
+                "Invalid --additional-header entry. Expected 'Name: Value'."
+            )
+        headers[header_name] = header_value
+    return headers
 
 
 def main() -> None:
